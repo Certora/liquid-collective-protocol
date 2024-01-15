@@ -1,11 +1,54 @@
 import "RiverV1.spec";
 
+use rule method_reachability;
+
 methods {
     function allowance(address, address) external returns(uint256) envfree;
     function balanceOf(address) external returns(uint256) envfree;
     function balanceOfUnderlying(address) external returns(uint256) envfree;
     function totalSupply() external returns(uint256) envfree;
+    function getBalanceToDeposit() external returns(uint256) envfree;
+
+    // Tracking earnings (rewards):
+    function _._onEarningsCalledMunged(uint256 amount) internal => ghostUpdate_onEarnings(amount) expect bool ALL;
+    // Tracking deposits:
+    function _._onDepositCalledMunged(address _depositor, address _recipient, uint256 _amount) internal => ghostUpdate_onDeposits(_amount) expect bool ALL;
 }
+
+ghost mathint counter_onEarnings{ // counter checking number of calls to _onDeposit
+    init_state axiom counter_onEarnings == 0;
+}
+ghost mathint total_onEarnings{ // counter checking number of calls to _onDeposit
+    init_state axiom total_onEarnings == 0;// this is total earned ETH
+}
+ghost mathint total_onDeposits{ // counter checking number of calls to _onDeposit
+    init_state axiom total_onDeposits == 0;// this is total earned ETH
+}
+
+function ghostUpdate_onEarnings(uint256 amount) returns bool
+{
+    counter_onEarnings = counter_onEarnings + 1;
+    total_onEarnings = total_onEarnings + amount;
+    return true;
+}
+
+function ghostUpdate_onDeposits(uint256 amount) returns bool
+{
+    total_onDeposits = total_onDeposits + amount;
+    return true;
+}
+
+// total underlying = (TotalDepositedETH + (TotalEarnedEth - TotalPenaltyAmounts) * Fee_Ratio)) 
+// 1. start with the following. It only tracks ETH:
+// UnderlyingAssetBalance = TotalDepositedETh + totalEarnedEth) // TODO: Also subtract penalties=fees. Note we don't take fees from deposits.
+
+ //total supply of LsEth = (total supply of staked ETH 
+ // + (consensus layer + execution layer rewards) 
+ // - (fees + penalties)) * ConversionRate
+ // I.e. given a conversion rate and balances, that LsEth balance/total supply is correct The same invariant for every owner's balance
+
+// TODO: Add _pullCLFunds (consensus layer rewards) tracking
+// TODO: Add _onEarnings (consensus layer rewards) tracking - takes rewards as an argument and computes fees from it
 
 // @title The allowance can only be changed by functions listed in the filter:
 // initRiverV1_1, setConsensusLayerData, decreaseAllowance, increaseAllowance, approve, transferFrom
@@ -125,6 +168,33 @@ rule pricePerShareChangesRespectively(method f) filtered {
     assert shares_balance_before == shares_balance_after => underlying_balance_before == underlying_balance_after;
 }
 
+rule sharesMonotonicWithAssets(env e, method f) filtered {
+    f -> !f.isView
+       // && f.selector != sig:requestRedeem(uint256,address).selector // Prover error
+       && f.selector != sig:claimRedeemRequests(uint32[],uint32[]).selector // Claiming rewards can violate the property.
+} {
+    calldataarg args;
+
+    mathint totalETHBefore = totalSupply();
+    mathint totalLsETHBefore = totalUnderlyingSupply();
+
+    f(e, args);
+
+    mathint totalETHAfter = totalSupply();
+    mathint totalLsETHAfter = totalUnderlyingSupply();
+
+    // require totalETHBefore + totalLsETHBefore + totalETHAfter + totalLsETHAfter <= max_uint256;
+    require totalETHBefore <= 2^128;
+    require totalLsETHBefore <= 2^128;
+    require totalETHAfter <= 2^128;
+    require totalLsETHAfter <= 2^128;
+
+    // assert totalETHBefore > totalETHAfter => totalLsETHBefore >= totalLsETHAfter;
+    // assert totalETHBefore < totalETHAfter => totalLsETHBefore <= totalLsETHAfter;
+    assert totalLsETHBefore > totalLsETHAfter => totalETHBefore >= totalETHAfter;
+    // assert totalLsETHBefore < totalLsETHAfter => totalETHBefore <= totalETHAfter;
+}
+
 rule conversionRateStable(env e, method f) filtered {
     f -> !f.isView
         // && f.selector == sig:RiverV1Harness.depositToConsensusLayer(uint256).selector
@@ -158,6 +228,28 @@ rule conversionRateStableRewardsFeesPenalties(env e, method f) filtered {
 
     assert false;
 }
+
+invariant totalUnderlyingSupplyBasicIntegrity(env e)
+    to_mathint(totalSupply(e)) == total_onDeposits + total_onEarnings + getBalanceToDeposit();
+
+// rule totalEthEqualsTotalDepositedPlusEarned(env e, method f) filtered {
+//     f -> !f.isView
+//         // && f.selector == sig:RiverV1Harness.depositToConsensusLayer(uint256).selector
+// } {
+//     calldataarg args;
+
+//     mathint totalETHBefore = totalSupply();
+//     mathint totalEarnedBefore = total_onEarnings;
+//     mathint totalDepositedBefore = total_onDeposits;
+
+//     f(e, args);
+
+//     mathint totalETHAfter = totalSupply();
+//     mathint totalEarnedAfter = total_onEarnings;
+//     mathint totalDepositedAfter = total_onDeposits;
+
+//     assert false;
+// }
 
 // @title After transfer from, balances are updated accordingly, but not of any other user. Also, totalSupply stays the same.
 // Proved:

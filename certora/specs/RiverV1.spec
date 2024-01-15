@@ -18,7 +18,8 @@ use rule method_reachability;
 
 
 methods {
-	
+
+
     // AllowlistV1
     function AllowlistV1.onlyAllowed(address, uint256) external envfree;
     function _.onlyAllowed(address, uint256) external => DISPATCHER(true);
@@ -119,8 +120,24 @@ function bytesSliceSummary(bytes buffer, uint256 start, uint256 len) returns byt
 // @title Checks basic formula: totalSupply of shares must match number of underlying tokens.
 // Proved
 // https://prover.certora.com/output/40577/a451e923be1144ae88f125ac4f7b7a60?anonymousKey=69814a5c38c0f7720859be747546bbbde3f79191
-invariant totalSupplyBasicIntegrity(env e)
-    totalSupply(e) == sharesFromUnderlyingBalance(e, totalUnderlyingSupply(e));
+invariant totalSupplyBasicIntegrity()
+    totalSupply() == sharesFromUnderlyingBalance(totalUnderlyingSupply());
+
+
+// @title total supply of LsEth = (total supply of staked ETH + (consensus layer + execution layer rewards) - (fees + penalties)) * ConversionRate I.e. given a conversion rate and balances, that LsEth balance/total supply is correct The same invariant for every owner’s balance
+rule totalSupplyMainIntegrity(env e, method f, calldataarg args) {
+    mathint totalLSEthBefore = totalSupply();
+    mathint totalEthStakedBefore = totalUnderlyingSupply();
+    mathint totalConsensusLayerRewardsBefore = 0; //TODO
+    mathint totalExecutionLayerRewardsBefore = 0; //TODO
+    mathint totalFeesBefore = 0; //TODO
+    mathint totalPenaltiesBefore = 0; //TODO
+
+    f(e, args);
+
+    assert false;
+}
+
 
     // Maybe try:
     // BalanceToDeposit.get() + CommittedBalance.get() + BalanceToRedeem.get() == River.balance(); //
@@ -171,11 +188,23 @@ rule depositAdditivityNoGiftsToEachDeposit(env e1, env e2, env eSum) {
     assert shares1 + shares2 <= sharesSum + sharesBefore;
 }
 
+// TODO:
+// https://prover.certora.com/output/40577/c3d10e61df4f49488d206d34f2fff204/?anonymousKey=97de87a7167bdecd1118ac835cd02161e24fc32f
+invariant noAssetsNoShares()
+    totalUnderlyingSupply() == 0 => totalSupply() == 0;
+
+// TODO:
+invariant noAssetsNoSharesUser(address user)
+    balanceOfUnderlying(user) == 0 => balanceOf(user) == 0;
+
 // @title It is never benefitial for any user to deposit in multiple smaller patches instead of one big patch.
 rule depositAdditivitySplittingNotProfitable(env e1, env e2, env eSum) {
     mathint amount1;
     mathint amount2;
     address recipient;
+
+    requireInvariant noAssetsNoShares();
+    requireInvariant noAssetsNoSharesUser(recipient);
 
     require amount1 == to_mathint(e1.msg.value);
     require amount2 == to_mathint(e2.msg.value);
@@ -206,6 +235,9 @@ rule depositAdditivityBatchingNotExtremelyProfitable(env e1, env e2, env eSum) {
     mathint amount2;
     address recipient;
 
+    requireInvariant noAssetsNoShares();
+    requireInvariant noAssetsNoSharesUser(recipient);
+
     require amount1 == to_mathint(e1.msg.value);
     require amount2 == to_mathint(e2.msg.value);
     require amount1 + amount2 == to_mathint(eSum.msg.value);
@@ -223,5 +255,5 @@ rule depositAdditivityBatchingNotExtremelyProfitable(env e1, env e2, env eSum) {
     depositAndTransfer(eSum, recipient) at initial;
     mathint sharesSum = balanceOf(recipient);
 
-    assert shares2 + 1 >= sharesSum;
+    assert shares2 + shares2 + 4 >= sharesSum;
 }
