@@ -147,6 +147,31 @@ rule riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem_for_setConsensusLayerData
     assert assets_after == toDeposit_after + committed_after + toRedeem_after;
 }
 
+rule riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem_for_helper2_helper7(env e)
+{
+    mathint assets_before = totalUnderlyingSupply();
+    uint256 toDeposit_before = getBalanceToDeposit();
+    uint256 committed_before = getCommittedBalance();
+    uint256 toRedeem_before = getBalanceToRedeem();
+    require assets_before == toDeposit_before + committed_before + toRedeem_before;
+    // require assets_before == 0;
+    // require toDeposit_before == 0;
+    require committed_before == 0;
+    require toRedeem_before == 0;
+
+    IOracleManagerV1.ConsensusLayerReport report;
+    IOracleManagerV1.ConsensusLayerDataReportingVariables vars;
+
+    helper2(e, report);
+    helper7_onEarnings(e, vars);
+
+    mathint assets_after = totalUnderlyingSupply();
+    uint256 toDeposit_after = getBalanceToDeposit();
+    uint256 committed_after = getCommittedBalance();
+    uint256 toRedeem_after = getBalanceToRedeem();
+
+    assert assets_after == toDeposit_after + committed_after + toRedeem_after;
+}
 
 invariant riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem()
     to_mathint(totalUnderlyingSupply()) == getBalanceToDeposit() + getCommittedBalance() + getBalanceToRedeem()

@@ -72,11 +72,25 @@ diff -ruN src/River.1.sol contracts/src/River.1.sol
              revert ZeroMintedShares();
 diff -ruN src/components/OracleManager.1.sol contracts/src/components/OracleManager.1.sol
 --- src/components/OracleManager.1.sol	2024-01-15 16:50:23
-+++ contracts/src/components/OracleManager.1.sol	2024-01-24 14:52:54
-@@ -255,13 +255,7 @@
-         ConsensusLayerDataReportingTrace trace;
++++ contracts/src/components/OracleManager.1.sol	2024-01-24 15:17:28
+@@ -241,27 +241,7 @@
+         emit SetBounds(_newValue.annualAprUpperBound, _newValue.relativeLowerBound);
      }
  
+-    /// @notice Structure holding internal variables used during reporting
+-    struct ConsensusLayerDataReportingVariables {
+-        uint256 preReportUnderlyingBalance;
+-        uint256 postReportUnderlyingBalance;
+-        uint256 lastReportExitedBalance;
+-        uint256 lastReportSkimmedBalance;
+-        uint256 exitedAmountIncrease;
+-        uint256 skimmedAmountIncrease;
+-        uint256 timeElapsedSinceLastReport;
+-        uint256 availableAmountToUpperBound;
+-        uint256 redeemManagerDemand;
+-        ConsensusLayerDataReportingTrace trace;
+-    }
+-
 -    /// @inheritdoc IOracleManagerV1
 -    function setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport calldata _report) external {
 -        // only the oracle is allowed to call this endpoint
@@ -88,7 +102,7 @@ diff -ruN src/components/OracleManager.1.sol contracts/src/components/OracleMana
          CLSpec.CLSpecStruct memory cls = CLSpec.get();
  
          // we start by verifying that the reported epoch is valid based on the consensus layer spec
-@@ -313,28 +307,115 @@
+@@ -313,28 +293,115 @@
  
          // we retrieve the current total underlying balance before any reporting data is applied to the system
          vars.preReportUnderlyingBalance = _assetBalance();
@@ -157,7 +171,7 @@ diff -ruN src/components/OracleManager.1.sol contracts/src/components/OracleMana
 +        }
 +    }
 +
-+    function helper7(ConsensusLayerDataReportingVariables memory vars) public {
++    function helper7_onEarnings(ConsensusLayerDataReportingVariables memory vars) public {
 +        // if our rewards are not null, we dispatch the fee to the collector
 +        if (vars.trace.rewards > 0) {
 +            _onEarnings(vars.trace.rewards);
@@ -218,7 +232,7 @@ diff -ruN src/components/OracleManager.1.sol contracts/src/components/OracleMana
          ReportBounds.ReportBoundsStruct memory rb = ReportBounds.get();
  
          // we compute the maximum allowed increase in balance based on the pre report value
-@@ -370,70 +451,28 @@
+@@ -370,70 +437,28 @@
              uint256 maxDecrease = _maxDecrease(rb, vars.preReportUnderlyingBalance);
  
              // we verify that the bound is not crossed
@@ -274,7 +288,7 @@ diff -ruN src/components/OracleManager.1.sol contracts/src/components/OracleMana
 -        if (vars.trace.rewards > 0) {
 -            _onEarnings(vars.trace.rewards);
 -        }
-+        helper7(vars);
++        helper7_onEarnings(vars);
  
 -        _requestExitsBasedOnRedeemDemandAfterRebalancings(
 -            _report.validatorsExitingBalance,
@@ -298,7 +312,7 @@ diff -ruN src/components/OracleManager.1.sol contracts/src/components/OracleMana
  
          // we emit a summary event with all the reporting details
          emit ProcessedConsensusLayerReport(_report, vars.trace);
-@@ -494,4 +533,4 @@
+@@ -494,4 +519,4 @@
      {
          return (_epochNow - _epochPast) * (_cls.secondsPerSlot * _cls.slotsPerEpoch);
      }
@@ -350,3 +364,27 @@ diff -ruN src/components/SharesManager.1.sol contracts/src/components/SharesMana
              _mintRawShares(_owner, sharesToMint);
          }
      }
+diff -ruN src/interfaces/components/IOracleManager.1.sol contracts/src/interfaces/components/IOracleManager.1.sol
+--- src/interfaces/components/IOracleManager.1.sol	2023-12-11 15:38:07
++++ contracts/src/interfaces/components/IOracleManager.1.sol	2024-01-24 15:17:25
+@@ -102,6 +102,20 @@
+         uint256 pulledCoverageFunds;
+     }
+ 
++    /// @notice Structure holding internal variables used during reporting
++    struct ConsensusLayerDataReportingVariables {
++        uint256 preReportUnderlyingBalance;
++        uint256 postReportUnderlyingBalance;
++        uint256 lastReportExitedBalance;
++        uint256 lastReportSkimmedBalance;
++        uint256 exitedAmountIncrease;
++        uint256 skimmedAmountIncrease;
++        uint256 timeElapsedSinceLastReport;
++        uint256 availableAmountToUpperBound;
++        uint256 redeemManagerDemand;
++        ConsensusLayerDataReportingTrace trace;
++    }
++
+     /// @notice The format of the oracle report
+     struct ConsensusLayerReport {
+         // this is the epoch at which the report was performed
