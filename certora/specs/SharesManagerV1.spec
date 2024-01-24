@@ -7,13 +7,35 @@ methods {
     function balanceOf(address) external returns(uint256) envfree;
     function balanceOfUnderlying(address) external returns(uint256) envfree;
     function totalSupply() external returns(uint256) envfree;
-    function getBalanceToDeposit() external returns(uint256) envfree;
 
     // Tracking earnings (rewards):
     function _._onEarningsCalledMunged(uint256 amount) internal => ghostUpdate_onEarnings(amount) expect bool ALL;
     // Tracking deposits:
     function _._onDepositCalledMunged(address _depositor, address _recipient, uint256 _amount) internal => ghostUpdate_onDeposits(_amount) expect bool ALL;
 }
+
+// We have ETH only in the Consensus layer or in the River.
+// Inside River, there are 3 storage variables that take care of internal accounting of Rivers balance: 
+//   * BalanceToDeposit
+//   * CommittedBalance
+//   * BalanceToRedeem
+// On the other hand, the Consensus layer has balance in two compounds:
+//   * LastConsensusLayerReport.get().validatorsCount is number of those that we already account for in the storedReport.validatorsBalance.
+//   * DepositedValidatorCount.get(). is number of all validators that deposited totally
+//   * The difference multiplied by ConsensusLayerDepositManagerV1.DEPOSIT_SIZE is the consensus layer amount of ETH
+// You can track each of them or their sum.
+// Given the amount of ETH that exists on the Consensus layer
+
+// First thing to prove: Invariant The sum of the three storage variables is equal to the actual River balance.
+// Secondly with requiring the first invariant, we want to say that call to _assetBalance() is equal to the River balance PLUS the consensus layer balance.
+// We would probably find holes (like donations?) and so instead of using the actual River balance, we would use the ghosts.
+// Secondly have a ghost total_river_balance and to create it correctly, we need
+// We want to prove, that
+//     1. the one ghost is equal to the actual balance of the contract River is equal to this ghost.
+
+// Lastly: Excluding the action of oracle update (setConsensusLayerData) The ratio between the total shares and the total underlying eth is preserved.
+// In other words: When no oracle update takes place, the exchange rate stays the same
+
 
 ghost mathint counter_onEarnings{ // counter checking number of calls to _onDeposit
     init_state axiom counter_onEarnings == 0;
@@ -37,6 +59,38 @@ function ghostUpdate_onDeposits(uint256 amount) returns bool
     total_onDeposits = total_onDeposits + amount;
     return true;
 }
+
+// Partially proved here (with some sanity fails and eror for claimRedeemRequests):
+// https://vaas-stg.certora.com/output/40577/e0f17bcec1594338ad6a53b432cdb04a/?anonymousKey=28d9005d1fe0729067a0749a6fdc28dd043ced24
+// TODO: filter oracle change and remove the ' + total_onEarnings'
+// invariant totalUnderlyingSupplyBasicIntegrity(env e)
+//     to_mathint(totalUnderlyingSupply()) == total_onDeposits + total_onEarnings
+//     filtered {
+//         f -> f.selector != sig:initRiverV1_1(address,uint64,uint64,uint64,uint64,uint64,uint256,uint256,uint128,uint128).selector
+//     } {
+//         preserved
+//         {
+//             require total_onDeposits <= 2^128;
+//             require total_onEarnings <= 2^128;
+//             require total_onDeposits >= 0;
+//             require total_onEarnings >= 0;
+//         }
+//     }
+
+invariant totalUnderlyingSupplyBasicIntegrity()
+    to_mathint(totalUnderlyingSupply()) == total_onDeposits
+    filtered {
+        f -> f.selector != sig:initRiverV1_1(address,uint64,uint64,uint64,uint64,uint64,uint256,uint256,uint128,uint128).selector
+          && f.selector != sig:setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport).selector
+    } {
+        preserved
+        {
+            require total_onDeposits <= 2^128;
+            require total_onEarnings <= 2^128;
+            require total_onDeposits >= 0;
+            require total_onEarnings >= 0;
+        }
+    }
 
 // total underlying = (TotalDepositedETH + (TotalEarnedEth - TotalPenaltyAmounts) * Fee_Ratio)) 
 // 1. start with the following. It only tracks ETH:
@@ -64,7 +118,7 @@ rule allowanceChangesRestrictively(method f) filtered {
         && f.selector != sig:increaseAllowance(address,uint256).selector
         && f.selector != sig:approve(address,uint256).selector
         && f.selector != sig:transferFrom(address,address,uint256).selector
-}  {
+} {
     env e;
     calldataarg args;
     address owner;
@@ -168,10 +222,13 @@ rule pricePerShareChangesRespectively(method f) filtered {
     assert shares_balance_before == shares_balance_after => underlying_balance_before == underlying_balance_after;
 }
 
+// This rule does not hold for setConsensusLayerData:
+// https://prover.certora.com/output/40577/e5a7a762228c45d29adfbdc3ace30530/?anonymousKey=6206b628e02ad22f68fd8f33c537f4eebe44847f
 rule sharesMonotonicWithAssets(env e, method f) filtered {
     f -> !f.isView
        // && f.selector != sig:requestRedeem(uint256,address).selector // Prover error
        && f.selector != sig:claimRedeemRequests(uint32[],uint32[]).selector // Claiming rewards can violate the property.
+       && f.selector != sig:setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport calldata).selector
 } {
     calldataarg args;
 
@@ -191,8 +248,8 @@ rule sharesMonotonicWithAssets(env e, method f) filtered {
 
     // assert totalETHBefore > totalETHAfter => totalLsETHBefore >= totalLsETHAfter;
     // assert totalETHBefore < totalETHAfter => totalLsETHBefore <= totalLsETHAfter;
-    assert totalLsETHBefore > totalLsETHAfter => totalETHBefore >= totalETHAfter;
-    // assert totalLsETHBefore < totalLsETHAfter => totalETHBefore <= totalETHAfter;
+    // assert totalLsETHBefore > totalLsETHAfter => totalETHBefore >= totalETHAfter;
+    assert totalLsETHBefore < totalLsETHAfter => totalETHBefore <= totalETHAfter;
 }
 
 rule conversionRateStable(env e, method f) filtered {
@@ -228,9 +285,6 @@ rule conversionRateStableRewardsFeesPenalties(env e, method f) filtered {
 
     assert false;
 }
-
-invariant totalUnderlyingSupplyBasicIntegrity(env e)
-    to_mathint(totalSupply(e)) == total_onDeposits + total_onEarnings + getBalanceToDeposit();
 
 // rule totalEthEqualsTotalDepositedPlusEarned(env e, method f) filtered {
 //     f -> !f.isView

@@ -18,8 +18,6 @@ use rule method_reachability;
 
 
 methods {
-
-
     // AllowlistV1
     function AllowlistV1.onlyAllowed(address, uint256) external envfree;
     function _.onlyAllowed(address, uint256) external => DISPATCHER(true);
@@ -40,6 +38,11 @@ methods {
     function _.getRedeemDemand() external => DISPATCHER(true);
 
     // RiverV1
+    function getBalanceToDeposit() external returns(uint256) envfree;
+    function getCommittedBalance() external returns(uint256) envfree;
+    function getBalanceToRedeem() external returns(uint256) envfree;
+    function consensusLayerDepositSize() external returns(uint256) envfree;
+    function riverEthBalance() external returns(uint256) envfree;
     function _.sendRedeemManagerExceedingFunds() external => DISPATCHER(true);
     function _.getAllowlist() external => DISPATCHER(true);
     function RiverV1Harness.getAllowlist() external returns(address) envfree;
@@ -56,10 +59,13 @@ methods {
     function RiverV1Harness.totalUnderlyingSupply() external returns(uint256) envfree;
     function RiverV1Harness.sharesFromUnderlyingBalance(uint256) external returns(uint256) envfree;
     function RiverV1Harness.balanceOf(address) external returns(uint256) envfree;
+    function RiverV1Harness.consensusLayerEthBalance() external returns(uint256) envfree;
     // RiverV1 : OracleManagerV1
     function _.setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport) external => DISPATCHER(true); 
+    function RiverV1Harness.getCLValidatorCount() external returns(uint256) envfree;
     // RiverV1 : ConsensusLayerDepositManagerV1
     function _.depositToConsensusLayer(uint256) external => DISPATCHER(true);
+    function RiverV1Harness.getDepositedValidatorCount() external returns(uint256) envfree;
 
     // WithdrawV1
     function _.pullEth(uint256) external => DISPATCHER(true);
@@ -102,14 +108,6 @@ function bytesSliceSummary(bytes buffer, uint256 start, uint256 len) returns byt
 	return to_ret;
 }
 
-// ghost mathint counter_onDeposit; // counter checking number of calls to _onDeposit
-
-// function ghostUpdate_onDepositCounter() returns bool
-// {
-//     counter_onDeposit = counter_onDeposit + 1;
-// 	return true;
-// }
-
 // Ghost for each one of the factors in
 // Ghost for Eth in Consensus layer
 // Ghost for the RIver balance BalanceToDeposit.get() + CommittedBalance.get() + BalanceToRedeem.get() Eth Deposited
@@ -123,20 +121,140 @@ function bytesSliceSummary(bytes buffer, uint256 start, uint256 len) returns byt
 invariant totalSupplyBasicIntegrity()
     totalSupply() == sharesFromUnderlyingBalance(totalUnderlyingSupply());
 
+// @title setConsensusLayerData does not break the following statement: river balance is equal to the sum BalanceToDeposit.get() + CommittedBalance.get() + BalanceToRedeem.get()
+// https://prover.certora.com/output/40577/70efd3b673224aebae46ced21e150dce/?anonymousKey=68b4b3fa514f4aceb895c1306f3b44c48e2b4773
+rule riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem_for_setConsensusLayerData(env e)
+{
+    mathint assets_before = totalUnderlyingSupply();
+    uint256 toDeposit_before = getBalanceToDeposit();
+    uint256 committed_before = getCommittedBalance();
+    uint256 toRedeem_before = getBalanceToRedeem();
+    require assets_before == toDeposit_before + committed_before + toRedeem_before;
+    // require assets_before == 0;
+    // require toDeposit_before == 0;
+    require committed_before == 0;
+    require toRedeem_before == 0;
 
-// @title total supply of LsEth = (total supply of staked ETH + (consensus layer + execution layer rewards) - (fees + penalties)) * ConversionRate I.e. given a conversion rate and balances, that LsEth balance/total supply is correct The same invariant for every owner’s balance
-rule totalSupplyMainIntegrity(env e, method f, calldataarg args) {
-    mathint totalLSEthBefore = totalSupply();
-    mathint totalEthStakedBefore = totalUnderlyingSupply();
-    mathint totalConsensusLayerRewardsBefore = 0; //TODO
-    mathint totalExecutionLayerRewardsBefore = 0; //TODO
-    mathint totalFeesBefore = 0; //TODO
-    mathint totalPenaltiesBefore = 0; //TODO
+    IOracleManagerV1.ConsensusLayerReport report;
+
+    setConsensusLayerData(e, report);
+
+    mathint assets_after = totalUnderlyingSupply();
+    uint256 toDeposit_after = getBalanceToDeposit();
+    uint256 committed_after = getCommittedBalance();
+    uint256 toRedeem_after = getBalanceToRedeem();
+
+    assert assets_after == toDeposit_after + committed_after + toRedeem_after;
+}
+
+
+invariant riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem()
+    to_mathint(totalUnderlyingSupply()) == getBalanceToDeposit() + getCommittedBalance() + getBalanceToRedeem()
+    filtered {
+        f -> f.selector != sig:initRiverV1_1(address,uint64,uint64,uint64,uint64,uint64,uint256,uint256,uint128,uint128).selector
+        && f.selector != sig:setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport).selector
+    }
+
+// @title totalUnderlyingSupply equals to sum of River ETH balance and consensusLayerEthBalance computed in RiverV1Harness as:
+//        (clValidatorCount - depositedValidatorCount) * depositSize
+// invariant underlyingBalanceEqualToRiverBalancePlusConsensus()
+//     to_mathint(totalUnderlyingSupply()) == riverEthBalance() + consensusLayerEthBalance()
+//     {
+//         preserved
+//         {
+//             // requireInvariant totalSupplyBasicIntegrity();
+//             // requireInvariant riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem();
+//             require getDepositedValidatorCount() <= getCLValidatorCount();
+//             require getCLValidatorCount() <= 2^64;
+//             require consensusLayerDepositSize() <= 2^64;
+//         }
+//     }
+
+rule underlyingBalanceEqualToRiverBalancePlusConsensus_claimRedeemRequests(env e)
+{
+    require getDepositedValidatorCount() <= getCLValidatorCount();
+    require getCLValidatorCount() <= 2^64;
+    require consensusLayerDepositSize() <= 2^64;
+    require to_mathint(totalUnderlyingSupply()) == riverEthBalance() + consensusLayerEthBalance();
+
+    uint32[] _redeemRequestIds;
+    uint32[] _withdrawalEventIds;
+
+    claimRedeemRequests(e, _redeemRequestIds, _withdrawalEventIds);
+
+    assert to_mathint(totalUnderlyingSupply()) == riverEthBalance() + consensusLayerEthBalance();
+}
+
+rule consensusLayerEth_changeVitness(env e, method f, calldataarg args)
+{
+    mathint consensusLayerBalanceBefore = consensusLayerEthBalance();
 
     f(e, args);
 
-    assert false;
+    mathint consensusLayerBalanceAfter = consensusLayerEthBalance();
+
+    assert consensusLayerBalanceBefore == consensusLayerBalanceAfter; // To see which function can change this
 }
+
+rule consensusLayerDepositSize_changeVitness(env e, method f, calldataarg args)
+{
+    mathint depositSizeBefore = consensusLayerDepositSize();
+
+    f(e, args);
+
+    mathint depositSizeAfter = consensusLayerDepositSize();
+
+    assert depositSizeAfter == 2;
+//    satisfy depositSizeBefore != depositSizeAfter; // To see which function can change this
+}
+
+rule getCLValidatorTotalBalance_changeVitness(env e, env e2, method f, calldataarg args)
+{
+    mathint before = getCLValidatorTotalBalance(e2);
+
+    f(e, args);
+
+    mathint after = getCLValidatorTotalBalance(e2);
+
+    satisfy before != after; // To see which function can change this
+}
+
+rule getLastConsensusLayerReport_changeVitness(env e, env e2, method f, calldataarg args)
+{
+    IOracleManagerV1.StoredConsensusLayerReport before = getLastConsensusLayerReport(e2);
+
+    f(e, args);
+
+    IOracleManagerV1.StoredConsensusLayerReport after = getLastConsensusLayerReport(e2);
+
+    assert before.epoch == after.epoch; // To see which function can change this
+    assert after.epoch == 0;
+}
+
+rule underlyingBalanceEqualToRiverBalancePlusConsensus(env e, method f, calldataarg args)
+{
+    // require getDepositedValidatorCount() <= getCLValidatorCount();
+    // require getCLValidatorCount() <= 2^64;
+    // require consensusLayerDepositSize() <= 2^64;
+    require to_mathint(totalUnderlyingSupply()) == riverEthBalance() + consensusLayerEthBalance();
+
+    f(e, args);
+
+    assert to_mathint(totalUnderlyingSupply()) == riverEthBalance() + consensusLayerEthBalance();
+}
+// @title total supply of LsEth = (total supply of staked ETH + (consensus layer + execution layer rewards) - (fees + penalties)) * ConversionRate I.e. given a conversion rate and balances, that LsEth balance/total supply is correct The same invariant for every owner’s balance
+// rule totalSupplyMainIntegrity(env e, method f, calldataarg args) {
+//     mathint totalLSEthBefore = totalSupply();
+//     mathint totalEthStakedBefore = totalUnderlyingSupply();
+//     mathint totalConsensusLayerRewardsBefore = 0; //TODO
+//     mathint totalExecutionLayerRewardsBefore = 0; //TODO
+//     mathint totalFeesBefore = 0; //TODO
+//     mathint totalPenaltiesBefore = 0; //TODO
+
+//     f(e, args);
+
+//     assert false;
+// }
 
 
     // Maybe try:
