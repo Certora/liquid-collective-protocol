@@ -13,9 +13,12 @@ methods {
     function getOracleMembers() external returns (address[] memory) envfree;
     function isMember(address) external returns (bool) envfree;
     function getLastReportedEpochId() external returns (uint256) envfree;
-
     /// @notice Submit a report as an oracle member
     function reportConsensusLayerData(IOracleManagerV1.ConsensusLayerReport) external;
+
+    /// IOracleManager (TEMPORARY SUMMARY - need to introduce a mock/implementation)
+    function _.setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport) external => NONDET;
+    function _.isValidEpoch(uint256) external => ALWAYS(true);
 }
 
 /*
@@ -54,7 +57,7 @@ function getNumberOfMembers() returns uint256 {
     return _members.length;
 }
 
-/// A non-convenient way to enforce the no-duplicate invariants for several indices.
+/// An inconvenient way to enforce the no-duplicate invariants for several indices.
 /// Number of repetitions should comply with 'loop_iter'.
 function RequireNoDuplicatesIndexPlus3(uint256 index) {
     uint256 N = getNumberOfMembers();
@@ -69,6 +72,14 @@ function RequireNoDuplicatesForAddress(address account) {
     /// Tag 'index' to be the index of 'account':
     require account != ZERO_ADDRESS() => getMemberAtIndex(index) == account;
     RequireNoDuplicatesIndexPlus3(index);
+}
+
+function RequireNoDuplicatesForAddressPair(address account1, address account2) {
+    uint256 index1; uint256 index2; 
+    /// Tag 'index' to be the index of 'account':
+    require account1 != ZERO_ADDRESS() => getMemberAtIndex(index1) == account1;
+    require account2 != ZERO_ADDRESS() => getMemberAtIndex(index2) == account2;
+    requireInvariant NoMembersDuplicates(index1, index2);
 }
 
 /*
@@ -298,13 +309,30 @@ rule cannotSubmitEarlierEpoch() {
     assert report.epoch == lastEpoch_after;
 }
 
-/// @title One cannot submit the same report twice sequentially.
-rule cannotSubmitSameReportTwice(method f) {
-    IOracleManagerV1.ConsensusLayerReport report;
-        env e1;
-        env e2;
-        reportConsensusLayerData(e1, report);
-        reportConsensusLayerData@withrevert(e2, report);
+/// @title No one can front-run a submission of a report with the same report submission and make the second one revert.
+rule cannotFrontRunSameReportSubmission(IOracleManagerV1.ConsensusLayerReport report) {
+    env e1;
+    env e2;
+    RequireNoDuplicatesForAddressPair(e1.msg.sender, e2.msg.sender);
+    storage initState = lastStorage;
 
-    assert lastReverted;
+    reportConsensusLayerData(e1, report) at initState;
+
+    reportConsensusLayerData(e2, report) at initState;
+    reportConsensusLayerData@withrevert(e1, report);
+
+    assert e1.msg.sender != e2.msg.sender => !lastReverted;
+}
+
+/// @title One cannot submit the same report twice sequentially.
+rule reportSubmissionIntegrity() {
+    env e;
+    IOracleManagerV1.ConsensusLayerReport report;
+    bool status_before = getMemberReportStatus(e.msg.sender);
+        reportConsensusLayerData@withrevert(e, report);
+        bool reverted = lastReverted;
+    bool status_after = getMemberReportStatus(e.msg.sender);
+
+    assert status_before => reverted;
+    assert !reverted => status_after;
 }
