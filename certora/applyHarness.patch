@@ -70,6 +70,108 @@ diff -ruN src/River.1.sol contracts/src/River.1.sol
          uint256 oldTotalSupply = _totalSupply();
          if (oldTotalSupply == 0) {
              revert ZeroMintedShares();
+diff -ruN src/components/OracleManager.1.sol contracts/src/components/OracleManager.1.sol
+--- src/components/OracleManager.1.sol	2024-01-15 16:50:23
++++ contracts/src/components/OracleManager.1.sol	2024-01-24 14:17:25
+@@ -255,13 +255,7 @@
+         ConsensusLayerDataReportingTrace trace;
+     }
+ 
+-    /// @inheritdoc IOracleManagerV1
+-    function setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport calldata _report) external {
+-        // only the oracle is allowed to call this endpoint
+-        if (msg.sender != OracleAddress.get()) {
+-            revert LibErrors.Unauthorized(msg.sender);
+-        }
+-
++    function helper1(IOracleManagerV1.ConsensusLayerReport calldata _report) public returns (ConsensusLayerDataReportingVariables memory) {
+         CLSpec.CLSpecStruct memory cls = CLSpec.get();
+ 
+         // we start by verifying that the reported epoch is valid based on the consensus layer spec
+@@ -313,13 +307,10 @@
+ 
+         // we retrieve the current total underlying balance before any reporting data is applied to the system
+         vars.preReportUnderlyingBalance = _assetBalance();
++        return vars;
++    }
+ 
+-        // if we have new exited / skimmed eth available, we pull funds from the consensus layer recipient
+-        if (vars.exitedAmountIncrease + vars.skimmedAmountIncrease > 0) {
+-            // this method pulls and updates ethToDeposit / ethToRedeem accordingly
+-            _pullCLFunds(vars.skimmedAmountIncrease, vars.exitedAmountIncrease);
+-        }
+-
++    function helper2(IOracleManagerV1.ConsensusLayerReport calldata _report) public {
+         {
+             // we update the system parameters, this will have an impact on how the total underlying balance is computed
+             IOracleManagerV1.StoredConsensusLayerReport memory storedReport;
+@@ -334,7 +325,39 @@
+             storedReport.slashingContainmentMode = _report.slashingContainmentMode;
+             LastConsensusLayerReport.set(storedReport);
+         }
++    }
+ 
++    function helper3_checkBounds(ConsensusLayerDataReportingVariables memory vars, ReportBounds.ReportBoundsStruct memory rb, uint256 maxDecrease) public {
++        if (
++                vars.postReportUnderlyingBalance
++                    < vars.preReportUnderlyingBalance - LibUint256.min(maxDecrease, vars.preReportUnderlyingBalance)
++        ) {
++            revert TotalValidatorBalanceDecreaseOutOfBound(
++                vars.preReportUnderlyingBalance,
++                vars.postReportUnderlyingBalance,
++                vars.timeElapsedSinceLastReport,
++                rb.relativeLowerBound
++            );
++        }
++    }
++
++    /// @inheritdoc IOracleManagerV1
++    function setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport calldata _report) external {
++        // only the oracle is allowed to call this endpoint
++        if (msg.sender != OracleAddress.get()) {
++            revert LibErrors.Unauthorized(msg.sender);
++        }
++        ConsensusLayerDataReportingVariables memory vars = helper1(_report);
++
++
++        // if we have new exited / skimmed eth available, we pull funds from the consensus layer recipient
++        if (vars.exitedAmountIncrease + vars.skimmedAmountIncrease > 0) {
++            // this method pulls and updates ethToDeposit / ethToRedeem accordingly
++            _pullCLFunds(vars.skimmedAmountIncrease, vars.exitedAmountIncrease);
++        }
++
++        helper2(_report);
++
+         ReportBounds.ReportBoundsStruct memory rb = ReportBounds.get();
+ 
+         // we compute the maximum allowed increase in balance based on the pre report value
+@@ -370,17 +393,8 @@
+             uint256 maxDecrease = _maxDecrease(rb, vars.preReportUnderlyingBalance);
+ 
+             // we verify that the bound is not crossed
+-            if (
+-                vars.postReportUnderlyingBalance
+-                    < vars.preReportUnderlyingBalance - LibUint256.min(maxDecrease, vars.preReportUnderlyingBalance)
+-            ) {
+-                revert TotalValidatorBalanceDecreaseOutOfBound(
+-                    vars.preReportUnderlyingBalance,
+-                    vars.postReportUnderlyingBalance,
+-                    vars.timeElapsedSinceLastReport,
+-                    rb.relativeLowerBound
+-                );
+-            }
++            helper3_checkBounds(vars, rb, maxDecrease);
++            
+ 
+             // we update the available amount to upper bound to be equal to the maximum allowed increase plus the negative delta due to the loss
+             vars.availableAmountToUpperBound =
+@@ -494,4 +508,4 @@
+     {
+         return (_epochNow - _epochPast) * (_cls.secondsPerSlot * _cls.slotsPerEpoch);
+     }
+-}
++}
+\ No newline at end of file
 diff -ruN src/components/SharesManager.1.sol contracts/src/components/SharesManager.1.sol
 --- src/components/SharesManager.1.sol	2023-12-11 15:38:07
 +++ contracts/src/components/SharesManager.1.sol	2024-01-16 15:06:39
