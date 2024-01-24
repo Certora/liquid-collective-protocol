@@ -2,7 +2,7 @@ default: help
 
 PATCH         = applyHarness.patch
 CONTRACTS_DIR = ../contracts/src
-MUNGED_DIR    = munged
+MUNGED_DIR    = munged/contracts/src
 
 help:
 	@echo "usage:"
