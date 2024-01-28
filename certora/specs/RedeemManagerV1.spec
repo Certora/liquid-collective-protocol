@@ -68,20 +68,6 @@ rule sumOfRequestHeightAndAmountIsPreserved(uint32 requestID, method f) filtered
     assert assert_uint256(requestID) < requestsCount => sumBefore == sumAfter;
 }
 
-/// @title The height of every redeem request is at least its amount.
-invariant RequestHeightIsHigherThanAmount(uint32 requestID)
-    getRedeemRequestAmount(requestID) <= getRedeemRequestHeight(requestID)
-    {
-        preserved {require getRedeemRequestCount() < max_uint32;}
-    }
-
-/// @title The height of every withdrawal event is at least its amount.
-invariant EventHeightIsHigherThanAmount(uint32 eventID)
-    getWithdrawalEventAmount(eventID) <= getWithdrawalEventHeight(eventID)
-    {
-        preserved {require getRedeemRequestCount() < max_uint32;}
-    }
-
 /// @title The height of any redeem request is at least the sum of any of its previous request amount and height. 
 /// Verified
 invariant HeightOfSubequentRequest(uint32 requestID1, uint32 requestID2)
@@ -89,8 +75,10 @@ invariant HeightOfSubequentRequest(uint32 requestID1, uint32 requestID2)
         => getRedeemRequestAmount(requestID1) + getRedeemRequestHeight(requestID1) <= to_mathint(getRedeemRequestHeight(requestID2))
     {
         preserved {
-            requireInvariant RequestHeightIsHigherThanAmount(requestID1);
-            requireInvariant RequestHeightIsHigherThanAmount(requestID2);
+            uint256 Nrequests = getRedeemRequestCount();
+            uint32 lastRequestID = Nrequests == 0 ? 0 : require_uint32(Nrequests - 1);
+            requireInvariant HeightOfSubequentRequest(requestID1, lastRequestID);
+            requireInvariant HeightOfSubequentRequest(requestID2, lastRequestID);
             require getRedeemRequestCount() < max_uint32;
         }
     }
@@ -104,8 +92,6 @@ invariant HeightOfSubequentEvent(uint32 eventID1, uint32 eventID2)
         preserved {
             uint256 Nevents = getWithdrawalEventCount();
             uint32 lastEventID = Nevents == 0 ? 0 : require_uint32(Nevents - 1); 
-            requireInvariant EventHeightIsHigherThanAmount(eventID1);
-            requireInvariant EventHeightIsHigherThanAmount(eventID2);
             requireInvariant HeightOfSubequentEvent(eventID1, lastEventID);
             requireInvariant HeightOfSubequentEvent(eventID2, lastEventID);
             require getRedeemRequestCount() < max_uint32;
@@ -124,10 +110,6 @@ rule subequentRequestCannotStealClaim(uint32 ID1, uint32 ID2) {
     uint32[] withdrawalEventIds2; 
     uint16 depth2;
 
-    requireInvariant RequestHeightIsHigherThanAmount(ID1);
-    requireInvariant RequestHeightIsHigherThanAmount(ID2);
-    requireInvariant EventHeightIsHigherThanAmount(withdrawalEventIds1[0]);
-    requireInvariant EventHeightIsHigherThanAmount(withdrawalEventIds2[0]);
     requireInvariant HeightOfSubequentRequest(ID1, ID2);
     require getRedeemRequestCount() < max_uint32;
 
@@ -253,7 +235,7 @@ rule claimStatuses_length_eq_redeemRequestIds_length
     assert redeemRequestIds.length == claimStatuses.length;
 }
 
-rule full_claim_is_terminal_simple(uint32 requestID, method f) filtered { f-> !f.isView } {
+rule full_claim_is_terminal(uint32 requestID, method f) filtered { f-> !f.isView } {
     env e;
     RedeemQueue.RedeemRequest redeemRequest_pre = getRedeemRequestDetails(requestID);
     
@@ -267,81 +249,6 @@ rule full_claim_is_terminal_simple(uint32 requestID, method f) filtered { f-> !f
 
     assert redeemRequest_pre.amount == 0 => redeemRequest_post.amount == 0;
 }
-
-// Once claimRedeemRequests(id) is full claimed subsequent calls are skipped
-// pass with loop_iter 1 z3 parametric rule
-// https://prover.certora.com/output/99352/4b31e156fca74fb888bb7a62d2aa43e8/?anonymousKey=29473295c3dbf7694f5f01ac24d341bb5344606f
-// pass loop iter 2 z3 non-parametric rule 
-// https://prover.certora.com/output/99352/685c922ed9cf48529b01712dfe7731bc/?anonymousKey=0157886421a0805cdb8eea325016ba5bce995ef7
-// timeout loop_iter 3
-// https://prover.certora.com/output/99352/d38f9588b74a47dfb222d6e7a7f7393d/?anonymousKey=897b383089646af6489f7b091a9bed023aa5b089
-// timeout loop_iter 1 and all contracts
-// https://vaas-stg.certora.com/output/99352/4557dd5f07fa4e54a42bda02c0465200/?anonymousKey=5cc206e7e8a04f9ba3059d8b2bfa5bea8430d23a
-//
-rule full_claim_is_terminal
-(method f)filtered { f-> !f.isView }
-{
-    env e1; env e2; env e3;
-    calldataarg args;
-    uint32[] redeemRequestIds1; uint32[] withdrawalEventIds1;
-    bool skipAlreadyClaimed1; uint16 depth1;
-
-    uint8[] claimStatuses1 = claimRedeemRequests(e1, redeemRequestIds1, withdrawalEventIds1, skipAlreadyClaimed1, depth1);
-    uint8 claimStatuses1_0 = claimStatuses1[0];
-    f(e2, args);
-    bool skipAlreadyClaimed2; uint16 depth2;
-    uint32[] redeemRequestIds2; uint32[] withdrawalEventIds2;
-    uint8[] claimStatuses2 = claimRedeemRequests(e3, redeemRequestIds2, withdrawalEventIds2, skipAlreadyClaimed2, depth2);
-    uint8 claimStatuses2_0 = claimStatuses2[0];
-
-    assert redeemRequestIds1.length > 0 && redeemRequestIds2.length > 0 && redeemRequestIds1[0] == redeemRequestIds2[0] 
-            => (claimStatuses1_0 == CLAIM_FULLY_CLAIMED() => skipAlreadyClaimed2);
-    assert redeemRequestIds1.length > 0 && redeemRequestIds2.length > 0 && redeemRequestIds1[0] == redeemRequestIds2[0] 
-            => (claimStatuses1_0 == CLAIM_FULLY_CLAIMED() => claimStatuses2_0 == CLAIM_SKIPPED());
-}
-
-rule full_claim_is_terminal_witness_nontrivial_antecedent
-(method f)filtered { f-> !f.isView }
-{
-    env e1; env e2; env e3;
-    calldataarg args;
-    uint32[] redeemRequestIds1; uint32[] withdrawalEventIds1;
-    bool skipAlreadyClaimed1; uint16 depth1;
-
-    uint8[] claimStatuses1 = claimRedeemRequests(e1, redeemRequestIds1, withdrawalEventIds1, skipAlreadyClaimed1, depth1);
-    uint8 claimStatuses1_0 = claimStatuses1[0];
-    f(e2, args);
-    bool skipAlreadyClaimed2; uint16 depth2;
-    uint32[] redeemRequestIds2; uint32[] withdrawalEventIds2;
-    uint8[] claimStatuses2 = claimRedeemRequests(e3, redeemRequestIds2, withdrawalEventIds2, skipAlreadyClaimed2, depth2);
-    uint8 claimStatuses2_0 = claimStatuses2[0];
-
-    require redeemRequestIds1.length > 0 && redeemRequestIds2.length > 0 && redeemRequestIds1[0] == redeemRequestIds2[0]; 
-    require claimStatuses1_0 == CLAIM_FULLY_CLAIMED();
-    satisfy claimStatuses2_0 == CLAIM_SKIPPED();
-}
-
-rule full_claim_is_terminal_witness_nontrivial_consequent
-(method f)filtered { f-> !f.isView }
-{
-    env e1; env e2; env e3;
-    calldataarg args;
-    uint32[] redeemRequestIds1; uint32[] withdrawalEventIds1;
-    bool skipAlreadyClaimed1; uint16 depth1;
-
-    uint8[] claimStatuses1 = claimRedeemRequests(e1, redeemRequestIds1, withdrawalEventIds1, skipAlreadyClaimed1, depth1);
-    uint8 claimStatuses1_0 = claimStatuses1[0];
-    f(e2, args);
-    bool skipAlreadyClaimed2; uint16 depth2;
-    uint32[] redeemRequestIds2; uint32[] withdrawalEventIds2;
-    uint8[] claimStatuses2 = claimRedeemRequests(e3, redeemRequestIds2, withdrawalEventIds2, skipAlreadyClaimed2, depth2);
-    uint8 claimStatuses2_0 = claimStatuses2[0];
-
-    require redeemRequestIds1.length > 0 && redeemRequestIds2.length > 0 && redeemRequestIds1[0] == redeemRequestIds2[0]; 
-    require claimStatuses2_0 != CLAIM_SKIPPED();
-    satisfy claimStatuses1_0 != CLAIM_FULLY_CLAIMED();
-}
-
 
 // A Claim request’s entitled LsETH is monotonically decreasing TODO: verify property meaning
 // redeemRequest.amount is non-increasing, in particular if the amount reaches zero it'll stay zero.
@@ -402,21 +309,19 @@ rule incremental_redeemRequestId(method f)filtered { f-> !f.isView }
 
 rule withdrawalHeightSatisfiesRequestLowerHeight() {
     env e;
-    uint32[] redeemRequestIds; require redeemRequestIds.length == 1;
-     /// Second scenario - Fully satisfied
-    uint32[] withdrawalEventIds; require withdrawalEventIds.length == 1;
+    uint32 eventID; uint32[] withdrawalEventIds = [eventID];
+    uint32 requestID; uint32[] redeemRequestIds = [requestID];
     bool skipAlreadyClaimed = true;
-    uint16 depth = 2;
-
-    RedeemQueue.RedeemRequest redeemRequest = getRedeemRequestDetails(redeemRequestIds[0]);
-    WithdrawalStack.WithdrawalEvent withdrawalEvent = getWithdrawalEventDetails(withdrawalEventIds[0]);
+    uint16 depth;
+    RedeemQueue.RedeemRequest redeemRequest = getRedeemRequestDetails(requestID);
+    WithdrawalStack.WithdrawalEvent withdrawalEvent = getWithdrawalEventDetails(eventID);
     /// Assume request is not yet claimed.
     require redeemRequest.amount > 0;
 
     uint8[] claimStatuses = 
         claimRedeemRequests(e, redeemRequestIds, withdrawalEventIds, skipAlreadyClaimed, depth);
 
-    assert withdrawalEvent.height >= redeemRequest.height => claimStatuses[0] == CLAIM_FULLY_CLAIMED();
+    assert (withdrawalEvent.height + withdrawalEvent.amount >= redeemRequest.height + redeemRequest.amount) => claimStatuses[0] == CLAIM_FULLY_CLAIMED();
 }
 
 rule cannotFullyClaimForASmallerAmount(uint32 requestID) {
@@ -435,9 +340,6 @@ rule cannotFullyClaimForASmallerAmount(uint32 requestID) {
     requireInvariant HeightOfSubequentEvent(eventID2, eventID1);
     requireInvariant HeightOfSubequentEvent(eventID1, eventID2);
     requireInvariant HeightOfSubequentEvent(eventID2, require_uint32(eventID2 + 1));
-    requireInvariant EventHeightIsHigherThanAmount(eventID1);
-    requireInvariant EventHeightIsHigherThanAmount(eventID2);
-    requireInvariant RequestHeightIsHigherThanAmount(requestID);
     
     bool skipAlreadyClaimed = true;
     uint16 depth = 0;
@@ -473,9 +375,6 @@ rule claimedAmountIsMonotonicWithEventSize(uint32 requestID) {
     requireInvariant HeightOfSubequentEvent(eventID1, eventID2);
     requireInvariant HeightOfSubequentEvent(eventID2, require_uint32(eventID2 + 1));
     requireInvariant HeightOfSubequentEvent(eventID1, require_uint32(eventID1 + 1));
-    requireInvariant EventHeightIsHigherThanAmount(eventID1);
-    requireInvariant EventHeightIsHigherThanAmount(eventID2);
-    requireInvariant RequestHeightIsHigherThanAmount(requestID);
     
     bool skipAlreadyClaimed = true;
     uint16 depth;
