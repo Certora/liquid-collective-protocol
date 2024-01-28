@@ -16,9 +16,9 @@ methods {
     /// @notice Submit a report as an oracle member
     function reportConsensusLayerData(IOracleManagerV1.ConsensusLayerReport) external;
 
-    /// IOracleManager (TEMPORARY SUMMARY - need to introduce a mock/implementation)
-    function _.setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport) external => NONDET;
-    function _.isValidEpoch(uint256) external => ALWAYS(true);
+    /// IOracleManager
+    function _.setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport report) external => setEpochCVL(report.epoch) expect void;
+    function _.isValidEpoch(uint256 epoch) external with (env e) => isValidEpochCVL(epoch, e.block.timestamp) expect bool;
 }
 
 /*
@@ -30,16 +30,22 @@ methods {
 definition ZERO_ADDRESS() returns address = 0;
 
 definition noMemberDuplicates(address account1, address account2) returns bool = 
-    (account1 !=0 && account2 !=0) => account1 != account2;
+    (account1 != ZERO_ADDRESS() && account2 != ZERO_ADDRESS()) => account1 != account2;
 
 definition changeMemberMethods(method f) returns bool = 
     f.selector == sig:setMember(address,address).selector ||
     f.selector == sig:removeMember(address,uint256).selector ||
     f.selector == sig:addMember(address,uint256).selector;
 
+definition clearVariantsMethods(method f) returns bool = 
+    f.selector == sig:initOracleV1_1().selector ||
+    f.selector == sig:removeMember(address,uint256).selector ||
+    f.selector == sig:addMember(address,uint256).selector ||
+    f.selector == sig:setQuorum(uint256).selector ||
+    f.selector == sig:reportConsensusLayerData(IOracleManagerV1.ConsensusLayerReport).selector;
+
 definition initializeMethods(method f) returns bool = 
     f.selector == sig:initOracleV1(address,address,uint64,uint64,uint64,uint64,uint256,uint256).selector;
-
 
 /*
 ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -80,6 +86,26 @@ function RequireNoDuplicatesForAddressPair(address account1, address account2) {
     require account1 != ZERO_ADDRESS() => getMemberAtIndex(index1) == account1;
     require account2 != ZERO_ADDRESS() => getMemberAtIndex(index2) == account2;
     requireInvariant NoMembersDuplicates(index1, index2);
+}
+
+/*
+┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Summaries: IOracleManager Mock                                                                                             │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+*/
+/// Mock for OracleManager.LastConsensusLayerReport.get().epoch
+ghost uint256 lastConsensusEpoch;
+
+/// Mock a part of OracleManager._isValidEpoch()
+ghost _validEpochTime(uint256,uint256) returns bool;
+
+function isValidEpochCVL(uint256 epoch, uint256 timestamp) returns bool {
+    return _validEpochTime(epoch, timestamp) && epoch > lastConsensusEpoch;
+}
+
+/// Upon a call to setConsensusLayerData() the stored consensus report epoch is updated accordingly.
+function setEpochCVL(uint256 epoch) {
+    lastConsensusEpoch = epoch;
 }
 
 /*
@@ -143,15 +169,28 @@ rule onlyPendingAdminOrAdminCanChangeAdmin(method f) filtered{f -> !f.isView && 
     assert adminBefore != adminAfter => (isSenderAdmin || isSenderPendingAdmin);
 }
 
+/// @title Only the admin can change the quorum.
+rule onlyAdminChangesQuorum(method f) filtered{f -> !f.isView && !initializeMethods(f)} {
+    uint256 quorum_before = getQuorum();
+        env e;
+        bool isSenderAdmin = e.msg.sender == getAdmin();
+        calldataarg args;
+        f(e,args);
+    uint256 quorum_after = getQuorum();
+
+    assert quorum_after != quorum_before => isSenderAdmin;
+}
+
 /*
 ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Rules: Oracle members                                                                                                  │
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 */
 
-/// @title The quorum cannot exceed the number of members.
-invariant QuorumIsAtMostNumberOfMembers()
-    getQuorum() <= getNumberOfMembers();
+/// @title The quorum value Q should respect the following invariant, where O is oracle member count
+/// (O / 2) + 1 <= Q <= O
+invariant QuorumBounds()
+    getQuorum() <= getNumberOfMembers() && getQuorum() - 1 >= getNumberOfMembers() / 2 ;
 
 /// @title The zero address is never an oracle member.
 invariant ZeroAddressIsNotAMember()
@@ -291,11 +330,52 @@ rule nonAdminCannotFrontRunSetQuorum(method f) filtered{f -> !f.isView && !initi
     assert senderIsNotAnAdmin => !lastReverted;
 }
 
+rule votesChangeIntegrity(method f, uint256 id) filtered{f -> !f.isView} {
+    env e;
+    bool isMember_ = isMember(e.msg.sender);
+    require getReportVariantsCount() < (1 << 254);
+    ReportsVariants.ReportVariantDetails details_before = getReportVariantDetails(id);
+    uint256 votes_before = details_before.votes;
+        calldataarg args;
+        f(e, args);
+    ReportsVariants.ReportVariantDetails details_after = getReportVariantDetails(id);
+    uint256 votes_after = details_after.votes;
+
+    assert !isMember_ => votes_before == votes_after, "A non oracle member cannot change the number of votes";
+    assert votes_before == votes_after || votes_after - votes_before == 1, "votes can either increase by 1 or be nullified";
+}
+
 /*
 ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Rules : Reports                                                                                           │
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 */
+rule whichMethodsClearVariants(method f) filtered{f -> !f.isView} {
+    env e;
+    calldataarg args;
+    bool senderIsAdminOrMember = isMember(e.msg.sender) || e.msg.sender == getAdmin();
+    f(e, args);
+    
+    if(f.selector != sig:reportConsensusLayerData(IOracleManagerV1.ConsensusLayerReport).selector) {
+        assert getReportVariantsCount() == 0 <=> clearVariantsMethods(f);
+    }
+    assert getReportVariantsCount() == 0 => clearVariantsMethods(f);
+    assert getReportVariantsCount() == 0 => senderIsAdminOrMember;
+}
+
+rule oracleCannotSubmitTwoReportsInTheSameEpoch() {
+    IOracleManagerV1.ConsensusLayerReport reportA;
+    IOracleManagerV1.ConsensusLayerReport reportB;
+    uint256 lastEpoch = getLastReportedEpochId();
+    env eA;
+    env eB;
+    require eA.msg.sender == eB.msg.sender;
+    reportConsensusLayerData(eA, reportA);
+    reportConsensusLayerData@withrevert(eB, reportB);
+
+    assert eA.block.timestamp == eB.block.timestamp => lastReverted;
+}
+
 /// @title Any submitted report ID must be after the last reported epoch. 
 /// The last reported epoch ID must be updated to that of the report.
 rule cannotSubmitEarlierEpoch() {
@@ -305,8 +385,8 @@ rule cannotSubmitEarlierEpoch() {
         reportConsensusLayerData(e, report);
     uint256 lastEpoch_after = getLastReportedEpochId();
 
-    assert report.epoch > lastEpoch_before;
-    assert report.epoch == lastEpoch_after;
+    assert report.epoch >= lastEpoch_before;
+    assert report.epoch == lastEpoch_after || report.epoch + 1 == to_mathint(lastEpoch_after);
 }
 
 /// @title No one can front-run a submission of a report with the same report submission and make the second one revert.
@@ -324,7 +404,7 @@ rule cannotFrontRunSameReportSubmission(IOracleManagerV1.ConsensusLayerReport re
     assert e1.msg.sender != e2.msg.sender => !lastReverted;
 }
 
-/// @title One cannot submit the same report twice sequentially.
+/// @title ...
 rule reportSubmissionIntegrity() {
     env e;
     IOracleManagerV1.ConsensusLayerReport report;

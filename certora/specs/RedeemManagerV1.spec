@@ -1,8 +1,4 @@
-import "RiverV1.spec";
-//import "Sanity.spec";
-//import "CVLMath.spec";
-
-use rule method_reachability;
+import "CVLMath.spec";
 
 methods {
     function getRedeemRequestDetails(uint32) external returns (RedeemQueue.RedeemRequest) envfree;
@@ -12,15 +8,29 @@ methods {
     function getWithdrawalEventCount() external returns (uint256) envfree;
     function getWithdrawalEventDetails(uint32) external returns (WithdrawalStack.WithdrawalEvent) envfree;
     
-    //Harness
-    function get_CLAIM_FULLY_CLAIMED() external returns (uint8) envfree;
-    function get_CLAIM_PARTIALLY_CLAIMED() external returns (uint8) envfree;
-    function get_CLAIM_SKIPPED() external returns (uint8) envfree;
+    /// CLAIM status
+    function CLAIM_FULLY_CLAIMED() external returns (uint8) envfree;
+    function CLAIM_PARTIALLY_CLAIMED() external returns (uint8) envfree;
+    function CLAIM_SKIPPED() external returns (uint8) envfree;
 
-    // MathSummarizations
-    //function _.mulDivDown(uint256 a, uint256 b, uint256 c) internal => mulDivDownAbstractPlus(a, b, c) expect uint256 ALL;
-}  
+    /// Harness:
+    function getWithdrawalEventHeight(uint32 id) external returns (uint256) envfree;  
+    function getWithdrawalEventAmount(uint32 id) external returns (uint256) envfree;   
+    function getRedeemRequestHeight(uint32 id) external returns (uint256) envfree;    
+    function getRedeemRequestAmount(uint32 id) external returns (uint256) envfree;   
 
+    function RedeemManagerV1._performDichotomicResolution(RedeemQueue.RedeemRequest memory request) internal returns (int64) => dichotomicResolution(request);
+
+    // Math Summarizations
+    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivDownAbstractPlus(a, b, c);
+} 
+
+/// Summary for _performDichotomicResolution
+function dichotomicResolution(RedeemQueue.RedeemRequest request) returns int64 {
+    int64 count = require_int64(getWithdrawalEventCount() - 1);
+    int64 index; require index >=0 && index <= count;
+    return index;
+}
 
 rule first_redeem_request_height_is_zero
 {
@@ -49,6 +59,28 @@ rule height_of_consequent_redeem_requests
     assert to_mathint(redeemRequest1.height) == to_mathint(redeemRequest0.amount) + to_mathint(redeemRequest0.height);
 }
 
+invariant RequestHeightIsHigherThanAmount(uint32 requestID)
+    getRedeemRequestAmount(requestID) <= getRedeemRequestHeight(requestID);
+
+invariant EventHeightIsHigherThanAmount(uint32 eventID)
+    getWithdrawalEventAmount(eventID) <= getWithdrawalEventHeight(eventID);
+
+rule height_of_consequent_redeem_requests_invariant(method f) filtered{f -> !f.isView} {
+    uint32 ID;
+    uint32 nextID = require_uint32(ID + 1);
+    require getRedeemRequestCount() < max_uint32;
+    RedeemQueue.RedeemRequest redeemRequest0_pre = getRedeemRequestDetails(ID);
+    RedeemQueue.RedeemRequest redeemRequest1_pre = getRedeemRequestDetails(nextID);
+
+    require to_mathint(redeemRequest1_pre.height) == redeemRequest0_pre.amount + redeemRequest0_pre.height;
+        env e;
+        calldataarg args;
+        f(e, args);
+    RedeemQueue.RedeemRequest redeemRequest0_post = getRedeemRequestDetails(ID);
+    RedeemQueue.RedeemRequest redeemRequest1_post = getRedeemRequestDetails(nextID);
+    
+    assert to_mathint(redeemRequest1_post.height) == redeemRequest0_post.amount + redeemRequest0_post.height;
+}
 
 
 // Given 2 consequent redeem requests and a single withdrawal event,
@@ -79,7 +111,7 @@ rule claim_order__single_call__same_withdrawal_event__subsequent_redeem_requests
     require getRedeemRequestCount() <= max_uint32; // requestRedeem() casts redeemRequests.length from uint256 to uint32
 
     assert (redeemRequestIds1.length > 1  && withdrawalEventIds1[0] == withdrawalEventIds1[1])
-            => (claimStatuses1_1 == get_CLAIM_FULLY_CLAIMED() => claimStatuses1_0 != get_CLAIM_PARTIALLY_CLAIMED()) ;
+            => (claimStatuses1_1 == CLAIM_FULLY_CLAIMED() => claimStatuses1_0 != CLAIM_PARTIALLY_CLAIMED()) ;
 }
 
 
@@ -121,7 +153,7 @@ rule claim_order__single_call__same_withdrawal_event__subsequent_redeem_requests
 
     
     assert (redeemRequestIds1.length > 1  && withdrawalEventIds1[0] == withdrawalEventIds1[1])
-            => (claimStatuses1_1 == get_CLAIM_FULLY_CLAIMED() => claimStatuses1_0 != get_CLAIM_PARTIALLY_CLAIMED()) ;
+            => (claimStatuses1_1 == CLAIM_FULLY_CLAIMED() => claimStatuses1_0 != CLAIM_PARTIALLY_CLAIMED()) ;
 }
 
 
@@ -135,6 +167,20 @@ rule claimStatuses_length_eq_redeemRequestIds_length
     uint8[] claimStatuses = claimRedeemRequests(e, redeemRequestIds, withdrawalEventIds, skipAlreadyClaimed, depth);
 
     assert redeemRequestIds.length == claimStatuses.length;
+}
+
+rule full_claim_is_terminal_simple(uint32 requestID, method f) filtered { f-> !f.isView } {
+    env e;
+    RedeemQueue.RedeemRequest redeemRequest_pre = getRedeemRequestDetails(requestID);
+    
+    mathint redeemRequestCount = getRedeemRequestCount();
+    require redeemRequestCount < max_uint32;
+    require to_mathint(requestID) < redeemRequestCount;
+        calldataarg args;
+        f(e, args);
+    RedeemQueue.RedeemRequest redeemRequest_post = getRedeemRequestDetails(requestID);
+
+    assert redeemRequest_pre.amount == 0 => redeemRequest_post.amount == 0;
 }
 
 // Once claimRedeemRequests(id) is full claimed subsequent calls are skipped
@@ -164,9 +210,9 @@ rule full_claim_is_terminal
     uint8 claimStatuses2_0 = claimStatuses2[0];
 
     assert redeemRequestIds1.length > 0 && redeemRequestIds2.length > 0 && redeemRequestIds1[0] == redeemRequestIds2[0] 
-            => (claimStatuses1_0 == get_CLAIM_FULLY_CLAIMED() => skipAlreadyClaimed2);
+            => (claimStatuses1_0 == CLAIM_FULLY_CLAIMED() => skipAlreadyClaimed2);
     assert redeemRequestIds1.length > 0 && redeemRequestIds2.length > 0 && redeemRequestIds1[0] == redeemRequestIds2[0] 
-            => (claimStatuses1_0 == get_CLAIM_FULLY_CLAIMED() => claimStatuses2_0 == get_CLAIM_SKIPPED());
+            => (claimStatuses1_0 == CLAIM_FULLY_CLAIMED() => claimStatuses2_0 == CLAIM_SKIPPED());
 }
 
 rule full_claim_is_terminal_witness_nontrivial_antecedent
@@ -186,8 +232,8 @@ rule full_claim_is_terminal_witness_nontrivial_antecedent
     uint8 claimStatuses2_0 = claimStatuses2[0];
 
     require redeemRequestIds1.length > 0 && redeemRequestIds2.length > 0 && redeemRequestIds1[0] == redeemRequestIds2[0]; 
-    require claimStatuses1_0 == get_CLAIM_FULLY_CLAIMED();
-    satisfy claimStatuses2_0 == get_CLAIM_SKIPPED();
+    require claimStatuses1_0 == CLAIM_FULLY_CLAIMED();
+    satisfy claimStatuses2_0 == CLAIM_SKIPPED();
 }
 
 rule full_claim_is_terminal_witness_nontrivial_consequent
@@ -207,8 +253,8 @@ rule full_claim_is_terminal_witness_nontrivial_consequent
     uint8 claimStatuses2_0 = claimStatuses2[0];
 
     require redeemRequestIds1.length > 0 && redeemRequestIds2.length > 0 && redeemRequestIds1[0] == redeemRequestIds2[0]; 
-    require claimStatuses2_0 != get_CLAIM_SKIPPED();
-    satisfy claimStatuses1_0 != get_CLAIM_FULLY_CLAIMED();
+    require claimStatuses2_0 != CLAIM_SKIPPED();
+    satisfy claimStatuses1_0 != CLAIM_FULLY_CLAIMED();
 }
 
 
@@ -216,12 +262,12 @@ rule full_claim_is_terminal_witness_nontrivial_consequent
 // A Claim request’s entitled LsETH is monotonically decreasing TODO: verify property meaning
 // redeemRequest.amount is non-increasing, in particular if the amount reaches zero it'll stay zero.
 // Hence a fully claimed request stays fully claimed.
-rule redeem_request_amount_non_increasing(method f)filtered { f-> !f.isView }{
+rule redeem_request_amount_non_increasing(method f) filtered { f-> !f.isView }{
 
     uint32 redeemRequestId;
     RedeemQueue.RedeemRequest redeemRequest1 = getRedeemRequestDetails(redeemRequestId);
     mathint redeemRequestCount = getRedeemRequestCount();
-    require redeemRequestCount <= 2^32; //Solidity downcast to uint32
+    require redeemRequestCount < max_uint32; //Solidity downcast to uint32
     env e; calldataarg args;
     f(e, args);
     RedeemQueue.RedeemRequest redeemRequest2 = getRedeemRequestDetails(redeemRequestId);
@@ -236,7 +282,7 @@ rule redeem_request_amount_non_increasing_witness_2_partial_claims{
     uint32 redeemRequestId;
     RedeemQueue.RedeemRequest redeemRequest1 = getRedeemRequestDetails(redeemRequestId);
     mathint redeemRequestCount = getRedeemRequestCount();
-    require redeemRequestCount <= 2^32;
+    require redeemRequestCount < max_uint32;
     env e; calldataarg args;
     claimRedeemRequests(e, args);
     RedeemQueue.RedeemRequest redeemRequest2 = getRedeemRequestDetails(redeemRequestId);
@@ -270,3 +316,51 @@ rule incremental_redeemRequestId(method f)filtered { f-> !f.isView }
 // redeem stack and withdraw queue
 // if a withdrawal stack height >= redeem request height then satisfy succeeds
 
+rule withdrawalHeightSatisfiesRequestLowerHeight() {
+    env e;
+    uint32[] redeemRequestIds; require redeemRequestIds.length == 1;
+     /// Second scenario - Fully satisfied
+    uint32[] withdrawalEventIds; require withdrawalEventIds.length == 1;
+    bool skipAlreadyClaimed = true;
+    uint16 depth = 2;
+
+    RedeemQueue.RedeemRequest redeemRequest = getRedeemRequestDetails(redeemRequestIds[0]);
+    WithdrawalStack.WithdrawalEvent withdrawalEvent = getWithdrawalEventDetails(withdrawalEventIds[0]);
+    /// Assume request is not yet claimed.
+    require redeemRequest.amount > 0;
+
+    uint8[] claimStatuses = 
+        claimRedeemRequests(e, redeemRequestIds, withdrawalEventIds, skipAlreadyClaimed, depth);
+
+    assert withdrawalEvent.height >= redeemRequest.height => claimStatuses[0] == CLAIM_FULLY_CLAIMED();
+}
+
+rule recursionClaimWitness() {
+    env e;
+    /// First scenario - partially satisfied
+    uint32[] redeemRequestIds1; require redeemRequestIds1.length == 1;
+    uint32[] withdrawalEventIds1; require withdrawalEventIds1.length == 1;
+    /// Second scenario - Fully satisfied
+    uint32[] redeemRequestIds2; require redeemRequestIds2.length == 2;
+    uint32[] withdrawalEventIds2; require withdrawalEventIds2.length == 2;
+    /// Match first element for both cases:
+    require redeemRequestIds1[0] == redeemRequestIds2[0];
+    require withdrawalEventIds1[0] == withdrawalEventIds2[0];
+    /// Fetch the requests details (first is generic, second is empty):
+    RedeemQueue.RedeemRequest redeemRequest1 = getRedeemRequestDetails(redeemRequestIds2[0]);
+    RedeemQueue.RedeemRequest redeemRequest2 = getRedeemRequestDetails(redeemRequestIds2[1]);
+    /// Set the second request to be an empty request:
+    require redeemRequest2.amount == 0;
+    bool skipAlreadyClaimed = true;
+    uint16 depth = 2;
+    storage initState = lastStorage;
+
+    uint8[] claimStatuses1 = 
+        claimRedeemRequests(e, redeemRequestIds1, withdrawalEventIds1, skipAlreadyClaimed, depth) at initState;
+
+    uint8[] claimStatuses2 = 
+        claimRedeemRequests(e, redeemRequestIds2, withdrawalEventIds2, skipAlreadyClaimed, depth) at initState;
+
+    /// Show a case where the first event wasn't sufficient for full claim, but the two events together were.
+    satisfy claimStatuses1[0] == CLAIM_PARTIALLY_CLAIMED() && claimStatuses2[0] == CLAIM_FULLY_CLAIMED();
+}
