@@ -3,4 +3,6 @@ pragma solidity ^0.8.20;
 
 import "../contracts/src/River.1.sol";
 
-contract RiverV1Harness is RiverV1 {}
+contract RiverV1Harness is RiverV1 {
+    
+}

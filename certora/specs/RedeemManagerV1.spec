@@ -1,4 +1,4 @@
-import "CVLMath.spec";
+import "MathSummaries.spec";
 
 methods {
     function getRedeemRequestDetails(uint32) external returns (RedeemQueue.RedeemRequest) envfree;
@@ -20,10 +20,7 @@ methods {
     function getRedeemRequestAmount(uint32 id) external returns (uint256) envfree;   
 
     function RedeemManagerV1._performDichotomicResolution(RedeemQueue.RedeemRequest memory request) internal returns (int64) => dichotomicResolution(request);
-
-    // Math Summarizations
-    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivDownAbstractPlus(a, b, c);
-} 
+}
 
 /// Summary for _performDichotomicResolution
 function dichotomicResolution(RedeemQueue.RedeemRequest request) returns int64 {
@@ -32,6 +29,21 @@ function dichotomicResolution(RedeemQueue.RedeemRequest request) returns int64 {
     return index;
 }
 
+/// @title Any registered withdrawal event has non-zero amount
+invariant WithdrawalEventHasNonZeroAmount(uint32 eventID)
+    assert_uint256(eventID) < getWithdrawalEventCount() => getWithdrawalEventAmount(eventID) !=0
+    {
+        preserved reportWithdraw(uint256 lsETHWithdrawable) with (env e) {
+            /// Not guaranteed!
+            /// Must be verified in the River.
+            // require lsETHWithdrawable !=0;
+        }
+        preserved {
+            require getWithdrawalEventCount() < max_uint32;
+        }
+    } 
+
+/// @title The height of the first redeem request, right after creation, is zero.
 rule first_redeem_request_height_is_zero
 {
     uint256 redeemRequestCount = getRedeemRequestCount();
@@ -42,46 +54,116 @@ rule first_redeem_request_height_is_zero
     assert redeemRequestCount == 0 => redeemRequest.height == 0;
 }
 
-// height of a redeem request corresponds to the previous request
-// todo: convert to a invariant
-rule height_of_consequent_redeem_requests
-{
-    env e0; env e1;
-    uint256 lsETHAmount0; address recipient0;
-    uint256 lsETHAmount1; address recipient1;
-    uint32 redeemRequestId0 = requestRedeem(e0, lsETHAmount0, recipient0);
-    uint32 redeemRequestId1 = requestRedeem(e1, lsETHAmount1, recipient1);
-    RedeemQueue.RedeemRequest redeemRequest0 = getRedeemRequestDetails(redeemRequestId0);
-    RedeemQueue.RedeemRequest redeemRequest1 = getRedeemRequestDetails(redeemRequestId1);
-
-    require getRedeemRequestCount() <= max_uint32; // requestRedeem() casts redeemRequests.length from uint256 to uint32
-    
-    assert to_mathint(redeemRequest1.height) == to_mathint(redeemRequest0.amount) + to_mathint(redeemRequest0.height);
-}
-
-invariant RequestHeightIsHigherThanAmount(uint32 requestID)
-    getRedeemRequestAmount(requestID) <= getRedeemRequestHeight(requestID);
-
-invariant EventHeightIsHigherThanAmount(uint32 eventID)
-    getWithdrawalEventAmount(eventID) <= getWithdrawalEventHeight(eventID);
-
-rule height_of_consequent_redeem_requests_invariant(method f) filtered{f -> !f.isView} {
-    uint32 ID;
-    uint32 nextID = require_uint32(ID + 1);
+/// @title For every redeem request, the sum of its height and shares amount is preserved once created.
+rule sumOfRequestHeightAndAmountIsPreserved(uint32 requestID, method f) filtered{f -> !f.isView} {
+    env e;
+    calldataarg args;
+    require assert_uint256(requestID) < getRedeemRequestCount();
     require getRedeemRequestCount() < max_uint32;
-    RedeemQueue.RedeemRequest redeemRequest0_pre = getRedeemRequestDetails(ID);
-    RedeemQueue.RedeemRequest redeemRequest1_pre = getRedeemRequestDetails(nextID);
-
-    require to_mathint(redeemRequest1_pre.height) == redeemRequest0_pre.amount + redeemRequest0_pre.height;
-        env e;
-        calldataarg args;
+    mathint sumBefore = getRedeemRequestAmount(requestID) + getRedeemRequestHeight(requestID);
         f(e, args);
-    RedeemQueue.RedeemRequest redeemRequest0_post = getRedeemRequestDetails(ID);
-    RedeemQueue.RedeemRequest redeemRequest1_post = getRedeemRequestDetails(nextID);
-    
-    assert to_mathint(redeemRequest1_post.height) == redeemRequest0_post.amount + redeemRequest0_post.height;
+    mathint sumAfter = getRedeemRequestAmount(requestID) + getRedeemRequestHeight(requestID);
+
+    assert sumBefore == sumAfter;
 }
 
+/// @title The height of every redeem request is at least its amount.
+invariant RequestHeightIsHigherThanAmount(uint32 requestID)
+    getRedeemRequestAmount(requestID) <= getRedeemRequestHeight(requestID)
+    {
+        preserved {require getRedeemRequestCount() < max_uint32;}
+    }
+
+/// @title The height of every withdrawal event is at least its amount.
+invariant EventHeightIsHigherThanAmount(uint32 eventID)
+    getWithdrawalEventAmount(eventID) <= getWithdrawalEventHeight(eventID)
+    {
+        preserved {require getRedeemRequestCount() < max_uint32;}
+    }
+
+/// @title The height of any redeem request is at least the sum of any of its previous request amount and height. 
+/// Verified
+invariant HeightOfSubequentRequest(uint32 requestID1, uint32 requestID2)
+    (requestID1 < requestID2 && assert_uint256(requestID2) < getRedeemRequestCount()) 
+        => getRedeemRequestAmount(requestID1) + getRedeemRequestHeight(requestID1) <= to_mathint(getRedeemRequestHeight(requestID2))
+    {
+        preserved {
+            requireInvariant RequestHeightIsHigherThanAmount(requestID1);
+            requireInvariant RequestHeightIsHigherThanAmount(requestID2);
+            require getRedeemRequestCount() < max_uint32;
+        }
+    }
+
+/// @title The height of any withdrawal event is at least the sum of any of its previous event amount and height. 
+/// Verified
+invariant HeightOfSubequentEvent(uint32 eventID1, uint32 eventID2)
+    (eventID1 < eventID2 && assert_uint256(eventID2) < getWithdrawalEventCount())
+        => getWithdrawalEventAmount(eventID1) + getWithdrawalEventHeight(eventID1) <= to_mathint(getWithdrawalEventHeight(eventID2))
+    {
+        preserved {
+            uint256 Nevents = getWithdrawalEventCount();
+            uint32 lastEventID = Nevents == 0 ? 0 : require_uint32(Nevents - 1); 
+            requireInvariant EventHeightIsHigherThanAmount(eventID1);
+            requireInvariant EventHeightIsHigherThanAmount(eventID2);
+            requireInvariant HeightOfSubequentEvent(eventID1, lastEventID);
+            requireInvariant HeightOfSubequentEvent(eventID2, lastEventID);
+            require getRedeemRequestCount() < max_uint32;
+            require Nevents < max_uint32;
+        }
+    }
+
+rule subequentRequestCannotStealClaim(uint32 ID1, uint32 ID2) {
+    env e;
+    /// First request
+    uint32[] redeemRequestIds1 = [ID1];
+    uint32[] withdrawalEventIds1;
+    uint16 depth1;
+    /// Second request
+    uint32[] redeemRequestIds2 = [ID2];
+    uint32[] withdrawalEventIds2; 
+    uint16 depth2;
+
+    requireInvariant RequestHeightIsHigherThanAmount(ID1);
+    requireInvariant RequestHeightIsHigherThanAmount(ID2);
+    requireInvariant EventHeightIsHigherThanAmount(withdrawalEventIds1[0]);
+    requireInvariant EventHeightIsHigherThanAmount(withdrawalEventIds2[0]);
+    requireInvariant HeightOfSubequentRequest(ID1, ID2);
+    require getRedeemRequestCount() < max_uint32;
+
+    storage initState = lastStorage;
+    claimRedeemRequests(e, redeemRequestIds1, withdrawalEventIds1, true, depth1) at initState;
+    uint256 amountPostA = getRedeemRequestAmount(ID1);
+
+    claimRedeemRequests(e, redeemRequestIds2, withdrawalEventIds2, true, depth2) at initState;
+    claimRedeemRequests(e, redeemRequestIds1, withdrawalEventIds1, true, depth1);
+    uint256 amountPostB = getRedeemRequestAmount(ID1);
+
+    assert ID2 > ID1 => amountPostA == amountPostB;
+}
+
+rule claimRequestAssociative(uint32 ID) {
+    env e;
+    uint32 withdrawalEventID1;
+    uint32 withdrawalEventID2;
+    uint16 depth;
+    /// Split into two parts (same request)
+    uint32[] redeemRequestIds1 = [ID];
+    uint32[] withdrawalEventIds1 = [withdrawalEventID1];
+    uint32[] redeemRequestIds2 = [ID];
+    uint32[] withdrawalEventIds2 = [withdrawalEventID2];
+    /// Case with two identical requests
+    uint32[] redeemRequestIds3 = [ID, ID];
+    uint32[] withdrawalEventIds3 = [withdrawalEventID1, withdrawalEventID2];
+ 
+    storage initState = lastStorage;
+    claimRedeemRequests(e, redeemRequestIds1, withdrawalEventIds1, true, depth) at initState;
+    claimRedeemRequests(e, redeemRequestIds2, withdrawalEventIds2, true, depth);
+    uint256 amountPostA = getRedeemRequestAmount(ID);
+
+    claimRedeemRequests(e, redeemRequestIds3, withdrawalEventIds3, true, depth) at initState;
+    uint256 amountPostB = getRedeemRequestAmount(ID);
+    assert amountPostA == amountPostB;
+}
 
 // Given 2 consequent redeem requests and a single withdrawal event,
 // if the first request is partially claimed then second request cannot be fully claimed 
@@ -102,7 +184,7 @@ rule claim_order__single_call__same_withdrawal_event__subsequent_redeem_requests
     uint8 claimStatuses1_0 = claimStatuses1[0];
     uint8 claimStatuses1_1 = claimStatuses1[1];
 
-    
+
     RedeemQueue.RedeemRequest redeemRequest0 = getRedeemRequestDetails(redeemRequestIds1[0]);
     RedeemQueue.RedeemRequest redeemRequest1 = getRedeemRequestDetails(redeemRequestIds1[1]);
 
@@ -175,6 +257,7 @@ rule full_claim_is_terminal_simple(uint32 requestID, method f) filtered { f-> !f
     
     mathint redeemRequestCount = getRedeemRequestCount();
     require redeemRequestCount < max_uint32;
+    /// Require that the request already exists (otherwise can turn from zero to non-zero)
     require to_mathint(requestID) < redeemRequestCount;
         calldataarg args;
         f(e, args);
@@ -256,7 +339,6 @@ rule full_claim_is_terminal_witness_nontrivial_consequent
     require claimStatuses2_0 != CLAIM_SKIPPED();
     satisfy claimStatuses1_0 != CLAIM_FULLY_CLAIMED();
 }
-
 
 
 // A Claim request’s entitled LsETH is monotonically decreasing TODO: verify property meaning
@@ -363,4 +445,5 @@ rule recursionClaimWitness() {
 
     /// Show a case where the first event wasn't sufficient for full claim, but the two events together were.
     satisfy claimStatuses1[0] == CLAIM_PARTIALLY_CLAIMED() && claimStatuses2[0] == CLAIM_FULLY_CLAIMED();
+    //satisfy claimStatuses1[0] == CLAIM_PARTIALLY_CLAIMED() && claimStatuses2[1] == CLAIM_SKIPPED();
 }

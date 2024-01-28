@@ -1,5 +1,5 @@
---- ../contracts/src/RedeemManager.1.sol	2024-01-28 09:08:03.663238823 +0200
-+++ 	2024-01-28 10:56:06.808751080 +0200
+--- ../contracts/src/RedeemManager.1.sol	2024-01-28 10:58:57.528701316 +0200
++++ 	2024-01-28 14:59:26.884998705 +0200
 @@ -26,11 +26,11 @@
      int64 internal constant RESOLVE_FULLY_CLAIMED = -3;
  
@@ -43,8 +43,8 @@
 +    }
 +}
 \ No newline at end of file
---- ../contracts/src/River.1.sol	2024-01-28 10:57:05.588730287 +0200
-+++ 	2024-01-28 10:56:43.808736488 +0200
+--- ../contracts/src/River.1.sol	2024-01-28 10:58:57.538701304 +0200
++++ 	2024-01-28 14:59:26.884998705 +0200
 @@ -369,9 +369,11 @@
          }
          uint256 newTotalBalance = _assetBalance();
@@ -78,8 +78,8 @@
          // we only commit multiples of 32 ETH
          currentMaxCommittableAmount = (currentMaxCommittableAmount / DEPOSIT_SIZE) * DEPOSIT_SIZE;
  
---- ../contracts/src/components/SharesManager.1.sol	2024-01-28 10:57:08.008729778 +0200
-+++ 	2024-01-28 10:56:51.928734093 +0200
+--- ../contracts/src/components/SharesManager.1.sol	2024-01-28 10:58:57.538701304 +0200
++++ 	2024-01-28 14:59:26.894998703 +0200
 @@ -202,7 +202,8 @@
              return 0;
          }
