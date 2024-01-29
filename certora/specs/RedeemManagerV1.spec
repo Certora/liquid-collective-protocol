@@ -1,6 +1,6 @@
-import "RiverV1.spec";
-//import "Sanity.spec";
-//import "CVLMath.spec";
+//import "RiverV1.spec";
+import "Sanity.spec";
+import "CVLMath.spec";
 
 use rule method_reachability;
 
@@ -18,7 +18,7 @@ methods {
     function get_CLAIM_SKIPPED() external returns (uint8) envfree;
 
     // MathSummarizations
-    //function _.mulDivDown(uint256 a, uint256 b, uint256 c) internal => mulDivDownAbstractPlus(a, b, c) expect uint256 ALL;
+    function _.mulDivDown(uint256 a, uint256 b, uint256 c) internal => mulDivDownAbstractPlus(a, b, c) expect uint256 ALL;
 }  
 
 
@@ -32,21 +32,46 @@ rule first_redeem_request_height_is_zero
     assert redeemRequestCount == 0 => redeemRequest.height == 0;
 }
 
-// height of a redeem request corresponds to the previous request
-// todo: convert to a invariant
-rule height_of_consequent_redeem_requests
-{
-    env e0; env e1;
-    uint256 lsETHAmount0; address recipient0;
-    uint256 lsETHAmount1; address recipient1;
-    uint32 redeemRequestId0 = requestRedeem(e0, lsETHAmount0, recipient0);
-    uint32 redeemRequestId1 = requestRedeem(e1, lsETHAmount1, recipient1);
-    RedeemQueue.RedeemRequest redeemRequest0 = getRedeemRequestDetails(redeemRequestId0);
-    RedeemQueue.RedeemRequest redeemRequest1 = getRedeemRequestDetails(redeemRequestId1);
+invariant redeem_request_height(uint32 redeemRequestId0, uint32 redeemRequestId1)
+    (
+        (to_mathint(redeemRequestId1) > to_mathint(redeemRequestId0)) =>
+        (to_mathint(getRedeemRequestDetails(redeemRequestId1).height) >=
+            to_mathint(getRedeemRequestDetails(redeemRequestId0).amount) + 
+            to_mathint(getRedeemRequestDetails(redeemRequestId0).height)))
+    {
+        preserved{
+            require getRedeemRequestCount() < max_uint32; // We consider the max_uint32 value to be safe
+            requireInvariant nonzero_redeem_request_owner(redeemRequestId0);
+            requireInvariant nonzero_redeem_request_owner(redeemRequestId1);
+        }
+    }
 
-    require getRedeemRequestCount() <= max_uint32; // requestRedeem() casts redeemRequests.length from uint256 to uint32
+
+invariant nonzero_redeem_request_owner(uint32 redeemRequestId)
+        to_mathint(redeemRequestId) < to_mathint(getRedeemRequestCount()) =>
+            getRedeemRequestDetails(redeemRequestId).owner != 0; 
+
+
+rule claim_order__single_call__same_withdrawal_event__subsequent_redeem_requests
+{
+    env e;
+
+    uint32[] redeemRequestIds;
+    uint32[] withdrawalEventIds;
+
+    requireInvariant redeem_request_height(redeemRequestIds[0], redeemRequestIds[1]);
+    requireInvariant redeem_request_height(redeemRequestIds[1], redeemRequestIds[0]);
     
-    assert to_mathint(redeemRequest1.height) == to_mathint(redeemRequest0.amount) + to_mathint(redeemRequest0.height);
+    //case split: checking only subsequent redeem requests here
+    require to_mathint(redeemRequestIds[1]) >= to_mathint(redeemRequestIds[0]) + 1;
+
+    bool skipAlreadyClaimed; uint16 depth;
+    uint8[] claimStatuses = claimRedeemRequests(e, redeemRequestIds, withdrawalEventIds, skipAlreadyClaimed, depth);
+    uint8 claimStatuses_0 = claimStatuses[0];
+    uint8 claimStatuses_1 = claimStatuses[1];
+
+    assert (redeemRequestIds.length > 1  && withdrawalEventIds[0] == withdrawalEventIds[1])
+            => (claimStatuses_1 == get_CLAIM_FULLY_CLAIMED() => claimStatuses_0 != get_CLAIM_PARTIALLY_CLAIMED()) ;
 }
 
 
@@ -55,74 +80,6 @@ rule height_of_consequent_redeem_requests
 // if the first request is partially claimed then second request cannot be fully claimed 
 // TODO: check claim properties with double call of claimRedeemRequests()
 // TODO: check unconstrained redeem requests and withdrawal events
-// @dev must use loop_iter 2 or higher
-// runtime: 18 minutes
-// https://vaas-stg.certora.com/output/99352/2e4efaf0b90e4a3ab57f5ded18304aa6/?anonymousKey=7d03fd70d4730acc02bbb3638e69bf5fb198fddd
-// pass with rule_sanity basic 24 minuts
-// https://vaas-stg.certora.com/output/99352/fb20f2f48e654c57b7f9949c145235e2/?anonymousKey=a7303503ab8f1cab81462bb7e0de4473c3750e32
-rule claim_order__single_call__same_withdrawal_event__subsequent_redeem_requests
-{
-    env e;
-
-    uint32[] redeemRequestIds1;
-    uint32[] withdrawalEventIds1;
-
-    bool skipAlreadyClaimed1; uint16 depth1;
-    uint8[] claimStatuses1 = claimRedeemRequests(e, redeemRequestIds1, withdrawalEventIds1, skipAlreadyClaimed1, depth1);
-    uint8 claimStatuses1_0 = claimStatuses1[0];
-    uint8 claimStatuses1_1 = claimStatuses1[1];
-
-    
-    RedeemQueue.RedeemRequest redeemRequest0 = getRedeemRequestDetails(redeemRequestIds1[0]);
-    RedeemQueue.RedeemRequest redeemRequest1 = getRedeemRequestDetails(redeemRequestIds1[1]);
-
-    require to_mathint(redeemRequest1.height) == to_mathint(redeemRequest0.amount) + to_mathint(redeemRequest0.height);
-    require to_mathint(redeemRequestIds1[1]) == to_mathint(redeemRequestIds1[0]) + 1;
-    
-    assert (redeemRequestIds1.length > 1  && withdrawalEventIds1[0] == withdrawalEventIds1[1])
-            => (claimStatuses1_1 == get_CLAIM_FULLY_CLAIMED() => claimStatuses1_0 != get_CLAIM_PARTIALLY_CLAIMED()) ;
-}
-
-rule claim_order__single_call__same_withdrawal_event__subsequent_redeem_requests__small_values
-{
-    env e;
-
-    uint32[] redeemRequestIds1;
-    uint32[] withdrawalEventIds1;
-
-    bool skipAlreadyClaimed1; uint16 depth1;
-    uint8[] claimStatuses1 = claimRedeemRequests(e, redeemRequestIds1, withdrawalEventIds1, skipAlreadyClaimed1, depth1);
-    uint8 claimStatuses1_0 = claimStatuses1[0];
-    uint8 claimStatuses1_1 = claimStatuses1[1];
-
-    
-    RedeemQueue.RedeemRequest redeemRequest0 = getRedeemRequestDetails(redeemRequestIds1[0]);
-    RedeemQueue.RedeemRequest redeemRequest1 = getRedeemRequestDetails(redeemRequestIds1[1]);
-
-    require to_mathint(redeemRequest1.height) == to_mathint(redeemRequest0.amount) + to_mathint(redeemRequest0.height);
-    require to_mathint(redeemRequestIds1[1]) == to_mathint(redeemRequestIds1[0]) + 1;
-    //require getRedeemRequestCount() <= max_uint32; // requestRedeem() casts redeemRequests.length from uint256 to uint32
-
-
-    require redeemRequestIds1[1] < 100;
-    require redeemRequest0.amount < 100;
-    require redeemRequest1.amount < 100;
-    require redeemRequest0.height < 100;
-    require redeemRequest1.height < 100;
-    require redeemRequest0.maxRedeemableEth < 100;
-    require redeemRequest1.maxRedeemableEth < 100;
-    require e.msg.value < 100;
-    
-
-    assert (redeemRequestIds1.length > 1  && withdrawalEventIds1[0] == withdrawalEventIds1[1])
-            => (claimStatuses1_1 == get_CLAIM_FULLY_CLAIMED() => claimStatuses1_0 != get_CLAIM_PARTIALLY_CLAIMED()) ;
-}
-
-
-//pass
-// dashboard runtime 18/23 minutes with/without rule_sanity basic
-// https://vaas-stg.certora.com/output/99352/448fe29698f4405f9d1193f3563d6287/?anonymousKey=45ab4b33c79faa276121eda3e3b000e402f1d939
-//pass 
 rule claim_order__single_call__same_withdrawal_event__subsequent_redeem_requests_no_invariant
 {
     env e1; env e2; env e3; env e4; 
@@ -154,9 +111,7 @@ rule claim_order__single_call__same_withdrawal_event__subsequent_redeem_requests
 
     WithdrawalStack.WithdrawalEvent withdrawalEvent = getWithdrawalEventDetails(withdrawalEventIds1[0]);
 
-    // rule fails when the requirement is omitted 
-    // TODO: uncomment if the customer confirms that downcating is safe.
-    //require getRedeemRequestCount() <= max_uint32; // requestRedeem() casts redeemRequests.length from uint256 to uint32
+    require getRedeemRequestCount() <= max_uint32; // We consider the max_uint32 value to be safe
 
     
     assert (redeemRequestIds1.length > 1  && withdrawalEventIds1[0] == withdrawalEventIds1[1])
@@ -164,73 +119,6 @@ rule claim_order__single_call__same_withdrawal_event__subsequent_redeem_requests
 }
 
 
-// Same rule with assumptions that enforce small values for easy debugging
-// TODO: remove when debugging is over
-rule claim_order__single_call__same_withdrawal_event__subsequent_redeem_requests_no_invariant_small_values
-{
-    env e1; env e2; env e3; env e4; 
-
-    
-    calldataarg args;
-    uint256 lsETHAmount1; address recipient1;
-    uint256 lsETHAmount2; address recipient2;
-
-    uint256 redeemRequestCount = getRedeemRequestCount();
-    uint32 redeemRequestId1 = requestRedeem(e1, lsETHAmount1, recipient1);
-    uint32 redeemRequestId2 = requestRedeem(e2, lsETHAmount2, recipient2);
-
-    uint256 lsETHWithdrawable;
-    reportWithdraw(e3, lsETHWithdrawable);
-    
-    uint32[] redeemRequestIds1; uint32[] withdrawalEventIds1;
-
-    require to_mathint(withdrawalEventIds1[0]) == to_mathint(getWithdrawalEventCount()) - 1;
-    require redeemRequestIds1[0] == redeemRequestId1;
-    require redeemRequestIds1[1] == redeemRequestId2;
-    
-    RedeemQueue.RedeemRequest redeemRequest0 = getRedeemRequestDetails(redeemRequestIds1[0]);
-    RedeemQueue.RedeemRequest redeemRequest1 = getRedeemRequestDetails(redeemRequestIds1[1]);
-    
-    
-    bool skipAlreadyClaimed1; uint16 depth1;
-    uint8[] claimStatuses1 = claimRedeemRequests(e4, redeemRequestIds1, withdrawalEventIds1, skipAlreadyClaimed1, depth1);
-    uint8 claimStatuses1_0 = claimStatuses1[0];
-    uint8 claimStatuses1_1 = claimStatuses1[1];
-
-    WithdrawalStack.WithdrawalEvent withdrawalEvent = getWithdrawalEventDetails(withdrawalEventIds1[0]);
-
-// rule fails when the requirement is omitted 
-//https://vaas-stg.certora.com/output/99352/31f8dfa8d55843e9af58e9292ff162ac/?anonymousKey=00d94bddfc26916afdc9b1de0d0327eb9fcb8123
-//
-    //require getRedeemRequestCount() <= max_uint32; // requestRedeem() casts redeemRequests.length from uint256 to uint32
-
-    require redeemRequestCount < 2^33;
-    require redeemRequestId1 < 100;
-    require redeemRequestId2 < 100;
-    require withdrawalEvent.amount < 100;
-    require withdrawalEvent.withdrawnEth < 100;
-    require withdrawalEvent.height < 100;
-    require lsETHWithdrawable < 100;
-    require redeemRequest0.amount < 100;
-    require redeemRequest1.amount < 100;
-    require redeemRequest0.height < 100;
-    require redeemRequest1.height < 100;
-    require redeemRequest0.maxRedeemableEth < 100;
-    require redeemRequest1.maxRedeemableEth < 100;
-    require e1.msg.value < 100;
-    require e2.msg.value < 100;
-    require e3.msg.value < 100;
-    require e4.msg.value < 100;
-    require lsETHAmount1 < 100;
-    require lsETHAmount2 < 100;
-
-    require e1.msg.sender != currentContract;
-    require e1.msg.sender != RiverV1Harness;
-    require e1.msg.sender != RiverV1Harness;
-
-    assert (redeemRequestIds1.length > 1  && withdrawalEventIds1[0] == withdrawalEventIds1[1])
-            => (claimStatuses1_1 == get_CLAIM_FULLY_CLAIMED() => claimStatuses1_0 != get_CLAIM_PARTIALLY_CLAIMED()) ;
-}
 
 
 
@@ -239,21 +127,15 @@ rule claimStatuses_length_eq_redeemRequestIds_length
 {
     env e; calldataarg args;
     uint32[] redeemRequestIds; uint32[] withdrawalEventIds; bool skipAlreadyClaimed; uint16 depth;
-
     uint8[] claimStatuses = claimRedeemRequests(e, redeemRequestIds, withdrawalEventIds, skipAlreadyClaimed, depth);
 
+//todo: add another check - the length of withdrawalEventIds
     assert redeemRequestIds.length == claimStatuses.length;
 }
 
-// Once claimRedeemRequests(id) is full claimed subsequent calls are skipped
+// Once claimRedeemRequests(id) is fully-claimed subsequent calls are skipped
+// @dev this rule checks claimRedeemRequests()
 // pass with loop_iter 1 z3 parametric rule
-// https://prover.certora.com/output/99352/4b31e156fca74fb888bb7a62d2aa43e8/?anonymousKey=29473295c3dbf7694f5f01ac24d341bb5344606f
-// pass loop iter 2 z3 non-parametric rule 
-// https://prover.certora.com/output/99352/685c922ed9cf48529b01712dfe7731bc/?anonymousKey=0157886421a0805cdb8eea325016ba5bce995ef7
-// timeout loop_iter 3
-// https://prover.certora.com/output/99352/d38f9588b74a47dfb222d6e7a7f7393d/?anonymousKey=897b383089646af6489f7b091a9bed023aa5b089
-// timeout loop_iter 1 and all contracts
-// https://vaas-stg.certora.com/output/99352/4557dd5f07fa4e54a42bda02c0465200/?anonymousKey=5cc206e7e8a04f9ba3059d8b2bfa5bea8430d23a
 //
 rule full_claim_is_terminal
 (method f)filtered { f-> !f.isView }
@@ -334,6 +216,8 @@ rule redeem_request_amount_non_increasing(method f)filtered { f-> !f.isView }{
     f(e, args);
     RedeemQueue.RedeemRequest redeemRequest2 = getRedeemRequestDetails(redeemRequestId);
 
+//TODO: try to remove "to_mathint(redeemRequestId) < redeemRequestCount"
+//TODO: try to remove the first assertion
     assert to_mathint(redeemRequestId) < redeemRequestCount =>  redeemRequest1.amount == 0 => redeemRequest2.amount == 0;
     assert to_mathint(redeemRequestId) < redeemRequestCount =>  redeemRequest1.amount >= redeemRequest2.amount;
 }
@@ -372,7 +256,16 @@ rule incremental_redeemRequestId(method f)filtered { f-> !f.isView }
                 => to_mathint(redeemRequestId3) == to_mathint(redeemRequestId1) + 1;
 }
 
+
+
+function getRedeemRequestHeight(uint32 redeemRequestId) returns uint256{
+    RedeemQueue.RedeemRequest redeemRequest = getRedeemRequestDetails(redeemRequestId);
+    return redeemRequest.height;
+}
+
 // ideas for additional properties
+// claim is additive - single redeem request, any withdrawal events
+//
 // one can redeem/deposit any amount
 // witness deposit and redeem without funds reaching the consensus layer
 // redeem stack and withdraw queue
