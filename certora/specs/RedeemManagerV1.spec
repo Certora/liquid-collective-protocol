@@ -76,7 +76,7 @@ rule claim_order__single_call__same_withdrawal_event__subsequent_redeem_requests
 
 
 
-// Given 2 consequent redeem requests and a single withdrawal event,
+// Given 2 subsequent redeem requests and a single withdrawal event,
 // if the first request is partially claimed then second request cannot be fully claimed 
 // TODO: check claim properties with double call of claimRedeemRequests()
 // TODO: check unconstrained redeem requests and withdrawal events
