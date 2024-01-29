@@ -5,6 +5,12 @@ import { RedeemManagerV1, WithdrawalStack, RedeemQueue } from "contracts/src/Red
 
 contract RedeemManagerV1Harness is RedeemManagerV1 {
 
+    function isMatchByID(uint32 requestID, uint32 eventID) external view returns (bool) {
+        if (eventID >= WithdrawalStack.get().length) return false;
+        if (requestID >= RedeemQueue.get().length) return false;
+        return _isMatch(RedeemQueue.get()[requestID], WithdrawalStack.get()[eventID]);
+    }
+
     function getWithdrawalEventHeight(uint32 id) external view returns (uint256) {
         if (id >= WithdrawalStack.get().length) return 0;
         WithdrawalStack.WithdrawalEvent storage _event = WithdrawalStack.get()[id];
