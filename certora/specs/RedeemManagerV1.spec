@@ -30,6 +30,10 @@ function dichotomicResolution(RedeemQueue.RedeemRequest request) returns int64 {
     return index;
 }
 
+/// @title The owner of any redeem request is not the zero address.
+invariant NonZeroRedeemRequestOwner(uint32 requestId)
+    to_mathint(requestId) < to_mathint(getRedeemRequestCount()) => getRedeemRequestDetails(requestId).owner != 0; 
+
 /// @title If any two requests match the same withdrawal event, then their height difference must be smaller than the event size.
 rule twoRequestsMatchTheSameEvent(uint32 requestID1, uint32 requestID2) {
     uint32 eventID;
@@ -466,4 +470,18 @@ rule claimedAmountIsMonotonicWithEventSize(uint32 requestID) {
 
     assert event1_amount > event2_amount => amountA <= amountB;
     assert amountA == amountB <=> amountA == 0;
+}
+
+rule satisfyRecursion(uint32 requestID, uint32 eventID) {
+    env e;
+    bool skipAlreadyClaimed = true;
+    storage initState = lastStorage;
+
+    claimRedeemRequests(e, [requestID], [eventID], skipAlreadyClaimed, 1) at initState;
+    uint256 amountA = getRedeemRequestAmount(requestID);
+
+    claimRedeemRequests(e, [requestID], [eventID], skipAlreadyClaimed, 2) at initState;
+    uint256 amountB = getRedeemRequestAmount(requestID);
+
+    satisfy amountA != amountB;
 }
