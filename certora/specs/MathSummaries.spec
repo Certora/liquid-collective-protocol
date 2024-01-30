@@ -1,8 +1,8 @@
 import "CVLMath.spec";
 
 methods {
-    //function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivDeterministic(a, b, c);
-    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivArbitrary(a, b, c);
+    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivDeterministic(a, b, c);
+    //function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivArbitrary(a, b, c);
     //function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivDownAbstractPlus(a, b, c);
 }
 
