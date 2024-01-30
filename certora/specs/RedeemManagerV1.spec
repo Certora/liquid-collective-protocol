@@ -20,7 +20,7 @@ methods {
     function getRedeemRequestAmount(uint32 id) external returns (uint256) envfree;
     function isMatchByID(uint32 requestID, uint32 eventID) external returns (bool) envfree;
 
-    function RedeemManagerV1._performDichotomicResolution(RedeemQueue.RedeemRequest memory request) internal returns (int64) => dichotomicResolution(request);
+    //function RedeemManagerV1._performDichotomicResolution(RedeemQueue.RedeemRequest memory request) internal returns (int64) => dichotomicResolution(request);
 }
 
 /// Summary for _performDichotomicResolution
@@ -33,6 +33,22 @@ function dichotomicResolution(RedeemQueue.RedeemRequest request) returns int64 {
 /// @title The owner of any redeem request is not the zero address.
 invariant NonZeroRedeemRequestOwner(uint32 requestId)
     to_mathint(requestId) < to_mathint(getRedeemRequestCount()) => getRedeemRequestDetails(requestId).owner != 0; 
+
+/// @title The height of the first withdrawal event is zero.
+invariant HeightOfFirstEventIsZero()
+    getWithdrawalEventHeight(0) == 0
+    {
+        preserved {require getWithdrawalEventCount() < max_uint32;}
+    }
+
+/// @title The Height difference of two adjacent withdrawal events is the amount of the former.
+invariant WithdrawalEventsHeightDifferenceIsAmount(uint32 ID)
+    ID + 1 < to_mathint(getWithdrawalEventCount()) =>
+    getWithdrawalEventHeight(ID) + getWithdrawalEventAmount(ID) ==
+    to_mathint(getWithdrawalEventHeight(require_uint32(ID+1)))
+    {
+        preserved {require getWithdrawalEventCount() < max_uint32;}
+    }
 
 /// @title If any two requests match the same withdrawal event, then their height difference must be smaller than the event size.
 rule twoRequestsMatchTheSameEvent(uint32 requestID1, uint32 requestID2) {
@@ -484,4 +500,26 @@ rule satisfyRecursion(uint32 requestID, uint32 eventID) {
     uint256 amountB = getRedeemRequestAmount(requestID);
 
     satisfy amountA != amountB;
+}
+
+/// @title The resolveRedeemRequests() is requests-associative.
+rule resolutionRequestsAssociative(uint32 ID1, uint32 ID2) {
+    int64[] resolutions1 = resolveRedeemRequests([ID1]);
+    int64[] resolutions2 = resolveRedeemRequests([ID2]);
+    int64[] resolutions3 = resolveRedeemRequests([ID1, ID2]);
+
+    assert resolutions1[0] == resolutions3[0];
+    assert resolutions2[0] == resolutions3[1];
+}
+
+/// @title The resolution of resolveRedeemRequests() is always a match for the request.
+rule resolutionRequestsYieldsAMatch(uint32 requestID) {
+    require getWithdrawalEventCount() <= max_uint32;
+    requireInvariant HeightOfFirstEventIsZero();
+
+    int64[] resolutions = resolveRedeemRequests([requestID]);
+    /// Assume a resolution has been found.
+    uint32 eventID = require_uint32(resolutions[0]);
+
+    assert isMatchByID(requestID, eventID); 
 }
