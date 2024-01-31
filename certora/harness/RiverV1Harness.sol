@@ -24,9 +24,9 @@ contract RiverV1Harness is RiverV1 {
         return (clValidatorCount - depositedValidatorCount) * depositSize;
     }
 
-    function reportWithdrawToRedeemManager() external {
-        _reportWithdrawToRedeemManager();
-    }
+    // function reportWithdrawToRedeemManager() external {
+    //     _reportWithdrawToRedeemManager();
+    // }
 
     /// @inheritdoc IOracleManagerV1
     function setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport calldata _report) external override(IOracleManagerV1, OracleManagerV1) {

@@ -1,7 +1,8 @@
 import "Base.spec";
 
 methods {
-    function _.mulDivDown(uint256 a, uint256 b, uint256 c) internal => mulDivDownAbstractPlus(a, b, 3) expect uint256 ALL;
+    function _.mulDivDown(uint256 a, uint256 b, uint256 c) internal => mulDivDownAbstractPlus(a, b, c) expect uint256 ALL;
+    // function _.mulDivDown(uint256 a, uint256 b, uint256 c) internal => mulDivDownAbstractPlus(a, b, 3) expect uint256 ALL;
 }
 
 // TODO:
