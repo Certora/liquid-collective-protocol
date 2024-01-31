@@ -207,7 +207,29 @@ rule subequentRequestCannotStealClaim(uint32 ID1, uint32 ID2) {
     claimRedeemRequests(e, redeemRequestIds1, withdrawalEventIds1, true, depth1);
     uint256 amountPostB = getRedeemRequestAmount(ID1);
 
-    assert ID2 > ID1 => amountPostA == amountPostB;
+    assert ID2 != ID1 => amountPostA == amountPostB;
+}
+
+/// @title The claimRedeemRequest() function is depth-associative (for each request separately).
+rule claimRequestDepthAssociative(uint32 ID) {
+    env e;
+    uint32 eventID;
+    uint32 nextEvent = require_uint32(eventID);
+    storage initState = lastStorage;
+
+    claimRedeemRequests(e, [ID], [eventID], true, 0) at initState;
+    claimRedeemRequests(e, [ID], [nextEvent], true, 0);
+    RedeemQueue.RedeemRequest requestPostA = getRedeemRequestDetails(ID);
+
+    claimRedeemRequests(e, [ID], [eventID], true, 1) at initState;
+    RedeemQueue.RedeemRequest requestPostB = getRedeemRequestDetails(ID);
+
+    assert ( 
+        requestPostA.amount == requestPostB.amount &&
+        requestPostA.maxRedeemableEth == requestPostB.maxRedeemableEth &&
+        requestPostA.height == requestPostB.height &&
+        requestPostA.owner == requestPostB.owner
+    );
 }
 
 /// @title The claimRedeemRequest() function is amount-additive (for each request separately).
@@ -410,7 +432,7 @@ rule maximumDrainOfWithdrawalEvent() {
         claimRedeemRequests(e1, redeemRequestIds1, withdrawalEventIds, skipAlreadyClaimed, depth);
     mathint amount1_after = getRedeemRequestAmount(requestID1);
 
-    assert  amount1_before - amount1_after <= eventSize;
+    assert amount1_before - amount1_after <= eventSize;
     mathint eventAmountRemaining = eventSize - (amount1_before - amount1_after);
 
     mathint amount2_before = getRedeemRequestAmount(requestID2);

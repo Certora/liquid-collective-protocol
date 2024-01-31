@@ -1,13 +1,17 @@
 import "CVLMath.spec";
 
 methods {
-    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivDeterministic(a, b, c);
+    //function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivDeterministic(a, b, c);
     //function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivArbitrary(a, b, c);
-    //function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivDownAbstractPlus(a, b, c);
+    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivDownAbstractPlus(a, b, c);
 }
 
 ghost mulDivArbitrary(uint256, uint256, uint256) returns uint256;
-ghost mapping(uint256 => mapping(uint256 => uint256)) _mulDivGhost;
+ghost mapping(uint256 => mapping(uint256 => uint256)) _mulDivGhost {
+    /// Monotonically increasing
+    axiom forall uint256 xy1. forall uint256 xy2. forall uint256 z.
+        xy1 <= xy2 => _mulDivGhost[xy1][z] <= _mulDivGhost[xy2][z];
+}
 
 function mulDivDeterministic(uint256 x, uint256 y, uint256 z) returns uint256 {
     require z !=0;
