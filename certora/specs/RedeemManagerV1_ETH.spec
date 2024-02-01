@@ -2,6 +2,8 @@ import "RedeemManagerV1.spec";
 
 using RiverMock as river;
 use invariant HeightOfSubequentRequest;
+use rule mulDivLIACheck;
+use rule mulDivMonotonicCheck;
 
 methods {
     function river.totalShares() external returns (uint256) envfree;
@@ -11,10 +13,25 @@ methods {
     function _.sendRedeemManagerExceedingFunds() external => DISPATCHER(true);
     function _.underlyingBalanceFromShares(uint256 _shares) external => DISPATCHER(true);
     function _.transferFrom(address _from, address _to, uint256 _value) external => DISPATCHER(true);
-    function RiverMath.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivDeterministic(a, b, c);
+    function RiverMath.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivLIA(a, b, c);
 }
 
 definition min256(uint256 x, uint256 y) returns uint256 =  x < y ? x : y;
+
+/// @title Any pushed event comes together with the event ETH deposit to the contract.
+rule eventIsPushedTogetherWithETH() {
+    env e; 
+    /// River is sender, which is not the manager.
+    require e.msg.sender != currentContract;
+    uint256 lsETHWithdrawable;
+    uint32 eventID = require_uint32(getWithdrawalEventCount());
+    
+    mathint balance_before = nativeBalances[currentContract];
+        reportWithdraw(e, lsETHWithdrawable);
+    mathint balance_after = nativeBalances[currentContract];
+
+    assert balance_after - balance_before == to_mathint(getWithdrawalEventDetails(eventID).withdrawnEth);
+}
 
 /// @title It's impossible for any matching request to drain an event more than its withdrawn ETH.
 rule cannotDrainMoreThanEventETH(uint32 eventID) {
@@ -32,6 +49,7 @@ rule cannotDrainMoreThanEventETH(uint32 eventID) {
     mathint managerETH_1 = nativeBalances[currentContract];
 
     assert managerETH_0 - managerETH_1 <= eventETH;
+    
     mathint eventETHRemaining = eventETH - (managerETH_0 - managerETH_1);
         claimRedeemRequests(e2, [requestID2], [eventID], true, 0);
     mathint managerETH_2 = nativeBalances[currentContract];
@@ -54,6 +72,7 @@ rule changeOfContractEthBalanceIsChangeOfMatchingPair(uint32 requestID, uint32 e
 
     assert match => balanceManager_pre - balanceManager_post <= eventETH;
     assert match => balanceManager_pre - balanceManager_post == requestETH_pre - requestETH_post;
+    /// The function should revert when there is no match, so the following assert vacuously holds.
     assert !match => balanceManager_post == balanceManager_pre;
 }
 
@@ -79,13 +98,13 @@ rule maxRedeemedAmount(uint32 ID) {
 rule requestSharePriceCannotIncrease(uint32 requestID) {
     RedeemQueue.RedeemRequest request_pre = getRedeemRequestDetails(requestID);
     require request_pre.amount !=0;
-    uint256 sharePrice_pre = mulDivDownAbstractPlus(request_pre.maxRedeemableEth, 10^18, request_pre.amount);
+    uint256 sharePrice_pre = mulDivLIA(request_pre.maxRedeemableEth, 10^18, request_pre.amount);
         env e;
         calldataarg args;
         claimRedeemRequests(e, args);
     RedeemQueue.RedeemRequest request_post = getRedeemRequestDetails(requestID);
     require request_post.amount !=0;
-    uint256 sharePrice_post = mulDivDownAbstractPlus(request_post.maxRedeemableEth, 10^18, request_post.amount);
+    uint256 sharePrice_post = mulDivLIA(request_post.maxRedeemableEth, 10^18, request_post.amount);
 
     assert to_mathint(sharePrice_post) <= sharePrice_pre + 1;
 }
@@ -101,8 +120,8 @@ rule minimalSharePrice(uint32 requestID, uint32 eventID) {
     uint256 deltaShares = assert_uint256(request_pre.amount - request_post.amount);
     uint256 deltaEth = assert_uint256(request_pre.maxRedeemableEth - request_post.maxRedeemableEth);
     /// Redeem share price is the minimum between event share price and request share price.
-    uint256 ethFromRequest = mulDivDownAbstractPlus(request_pre.maxRedeemableEth, deltaShares, request_pre.amount);
-    uint256 ethFromEvent = mulDivDownAbstractPlus(event.withdrawnEth, deltaShares, event.amount);
+    uint256 ethFromRequest = mulDivLIA(request_pre.maxRedeemableEth, deltaShares, request_pre.amount);
+    uint256 ethFromEvent = mulDivLIA(event.withdrawnEth, deltaShares, event.amount);
 
     assert deltaEth <= min256(ethFromEvent, ethFromRequest);
     assert to_mathint(deltaEth) >= min256(ethFromEvent, ethFromRequest) - 1;
