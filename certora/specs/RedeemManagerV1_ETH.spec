@@ -1,7 +1,7 @@
-import "RedeemManagerV1.spec";
+import "RedeemManagerV1_setup.spec";
 
 using RiverMock as river;
-use invariant HeightOfSubequentRequest;
+use invariant HeightOfSubequentRequest filtered{f -> f.isView}
 use rule mulDivLIACheck;
 use rule mulDivMonotonicCheck;
 
@@ -14,6 +14,7 @@ methods {
     function _.underlyingBalanceFromShares(uint256 _shares) external => DISPATCHER(true);
     function _.transferFrom(address _from, address _to, uint256 _value) external => DISPATCHER(true);
     function RiverMath.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivLIA(a, b, c);
+    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivLIA(a, b, c);
 }
 
 definition min256(uint256 x, uint256 y) returns uint256 =  x < y ? x : y;

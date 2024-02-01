@@ -1,11 +1,5 @@
 import "CVLMath.spec";
 
-methods {
-    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivLIA(a, b, c);
-    //function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivArbitrary(a, b, c);
-    //function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivDownAbstractPlus(a, b, c);
-}
-
 ghost mulDivArbitrary(uint256, uint256, uint256) returns uint256;
 ghost mapping(uint256 => mapping(uint256 => uint256)) _mulDivGhost {
     /// Monotonically increasing
@@ -22,6 +16,8 @@ function mulDivLIA(uint256 x, uint256 y, uint256 z) returns uint256 {
     if(z > x) {
         uint256 w = assert_uint256(z - x);
         uint256 wy = require_uint256(w * y); 
+        /// [(x * y) / z] + [(z - x) * y / z] = y
+        /// muldiv(x , y , z) + muldiv((z-x) , y , z) <= y
         require _mulDivGhost[xy][z] + _mulDivGhost[wy][z] <= to_mathint(y);
     }
     require _mulDivGhost[xy][z] <= xy;   
