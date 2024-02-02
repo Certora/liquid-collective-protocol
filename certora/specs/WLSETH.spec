@@ -5,6 +5,8 @@ methods {
     function WLSETHV1.totalSupply() external returns(uint256) envfree;
     function WLSETHV1.balanceOf(address) external returns(uint256) envfree;
 
+    function RiverV1Harness.balanceOfUnderlying(address) external envfree => DISPATCHER(true);
+
     // // AllowlistV1
     // function AllowlistV1.onlyAllowed(address, uint256) external envfree;
     // function _.onlyAllowed(address, uint256) external => DISPATCHER(true);
