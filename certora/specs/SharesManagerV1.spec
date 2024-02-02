@@ -65,11 +65,9 @@ rule allowanceChangesRestrictively(method f) filtered {
     address owner;
     address spender;
     uint256 allowance_before = allowance(owner, spender);
-    // require allowance_before == 12345;
     require owner != spender;
     f(e, args);
     uint256 allowance_after = allowance(owner, spender);
-    // require allowance_after == 23456;
     assert allowance_after == allowance_before;
 }
 
@@ -130,7 +128,6 @@ rule sharesBalanceChangesRestrictively(method f) filtered {
         && f.selector != sig:depositAndTransfer(address).selector
         && f.selector != sig:deposit().selector
         && f.selector != sig:requestRedeem(uint256,address).selector
-        // f.selector != sig:claimRedeemRequests(uint32[],uint32[]).selector
 } {
     env e;
     calldataarg args;
@@ -163,8 +160,10 @@ rule pricePerShareChangesRespectively(method f) filtered {
     assert shares_balance_before == shares_balance_after => underlying_balance_before == underlying_balance_after;
 }
 
-// This rule does not hold for setConsensusLayerData:
-// https://prover.certora.com/output/40577/e5a7a762228c45d29adfbdc3ace30530/?anonymousKey=6206b628e02ad22f68fd8f33c537f4eebe44847f
+// For claimRedeemRequests:
+// https://prover.certora.com/output/40577/f471c52cd3bc492b8fa66be4ea5ceca2?anonymousKey=41e7eff719e12adb7ef871a595db299bf2b54d81
+// For the rest (except setConsensusLayerData):
+// https://prover.certora.com/output/40577/e1b3895a5aea45109a2398708c64c5c9/?anonymousKey=ea0663a174435d274e51a992cee73f0573fa8a80
 rule sharesMonotonicWithAssets(env e, method f) filtered {
     f -> !f.isView
        // && f.selector != sig:requestRedeem(uint256,address).selector // Prover error
