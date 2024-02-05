@@ -46,6 +46,7 @@ methods {
     function _.sendELFees() external => DISPATCHER(true);
 
     // RiverV1 : SharesManagerV1
+    function _.transfer(address, uint256) external => DISPATCHER(true);
     function _.transferFrom(address, address, uint256) external => DISPATCHER(true);
     function _.underlyingBalanceFromShares(uint256) external => DISPATCHER(true);
     function RiverV1Harness.underlyingBalanceFromShares(uint256) external returns(uint256) envfree;
