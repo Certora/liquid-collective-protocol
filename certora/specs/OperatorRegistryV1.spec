@@ -3,6 +3,8 @@ import "CVLMath.spec";
 import "OperatorRegistryV1_base.spec";
 
 use rule method_reachability;
+use invariant ValidatorsMappingsMatch;
+use invariant EmptyMappings;
 
 invariant inactiveOperatorsRemainNotFunded_LI2(uint opIndex) 
     isValidState() => (!getOperator(opIndex).active => getOperator(opIndex).funded == 0)

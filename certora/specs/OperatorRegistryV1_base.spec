@@ -35,6 +35,9 @@ methods {
     //workaroun per CERT-4615 
     function LibBytes.slice(bytes memory _bytes, uint256 _start, uint256 _length) internal returns (bytes memory) => bytesSliceSummary(_bytes, _start, _length);
 
+    /// ValidatorsKeys Hooks
+    function OperatorsRegistryV1._setValidator(uint256 _operatorIndex, uint256 _idx, bytes memory _validator) internal => hookSetValidator(_operatorIndex, _idx, _validator);
+    function OperatorsRegistryV1._getValidator(uint256 _operatorIndex, uint256 _idx, bytes memory _validator) internal => hookGetValidator(_operatorIndex, _idx, _validator);
 }
 
 ghost mapping(bytes32 => mapping(uint => bytes32)) sliceGhost;
@@ -103,3 +106,68 @@ definition canIncreaseOperatorsCount(method f) returns bool =
 
 definition canDecreaseOperatorsCount(method f) returns bool = 
     f.selector == sig:initOperatorsRegistryV1_1().selector;
+
+definition EMPTY_INDEX() returns uint256 = max_uint256;
+definition EMPTY_VALIDATOR() returns bytes32 = to_bytes32(0);
+
+function hookGetValidator(uint256 _operatorIndex, uint256 _idx, bytes validator) {
+    /// We disallow indices of our default empty values.
+    require _operatorIndex != EMPTY_INDEX();
+    require _idx != EMPTY_INDEX();
+    bytes32 validatorHash = keccak256(validator);
+    if(validator.length == 0) {
+        require op_2_validator[_operatorIndex][_idx] == EMPTY_VALIDATOR();
+        require validator_2_op[validatorHash] == EMPTY_INDEX();
+        require validator_2_index[validatorHash] == EMPTY_INDEX();
+    }
+    else {
+        require op_2_validator[_operatorIndex][_idx] == validatorHash;
+        require validator_2_op[validatorHash] == _operatorIndex;
+        require validator_2_index[validatorHash] == _idx;
+    }
+}
+
+function hookSetValidator(uint256 _operatorIndex, uint256 _idx, bytes validator) {
+    /// We disallow indices of our default empty values.
+    require _operatorIndex != EMPTY_INDEX();
+    require _idx != EMPTY_INDEX();
+    bytes32 validatorHash = keccak256(validator);
+    if(validator.length == 0) {
+        op_2_validator[_operatorIndex][_idx] = EMPTY_VALIDATOR();
+        validator_2_op[validatorHash] = EMPTY_INDEX();
+        validator_2_index[validatorHash] = EMPTY_INDEX();
+    }
+    else {
+        op_2_validator[_operatorIndex][_idx] = validatorHash;
+        validator_2_op[validatorHash] = _operatorIndex;
+        validator_2_index[validatorHash] = _idx;
+    }
+}
+
+invariant ValidatorsMappingsMatch(uint256 operatorIndex, uint256 idx, bytes32 validator) 
+    (
+        validator != EMPTY_VALIDATOR() &&
+        operatorIndex != EMPTY_INDEX() &&
+        idx != EMPTY_INDEX()
+    ) 
+    =>
+    (
+        op_2_validator[operatorIndex][idx] == validator <=>
+        (validator_2_op[validator] == operatorIndex && validator_2_index[validator] == idx)
+    );
+
+invariant EmptyMappings(uint256 idx)
+    op_2_validator[EMPTY_INDEX()][idx] == EMPTY_VALIDATOR() &&
+    validator_2_index[EMPTY_VALIDATOR()] == EMPTY_INDEX() &&
+    validator_2_index[EMPTY_VALIDATOR()] == EMPTY_INDEX();
+    
+
+ghost mapping(uint256 => mapping(uint256 => bytes32)) op_2_validator {
+    init_state axiom forall uint256 op. forall uint256 indx. op_2_validator[op][indx] == EMPTY_VALIDATOR();
+}
+ghost mapping(bytes32 => uint256) validator_2_op {
+    init_state axiom forall bytes32 validators. validator_2_op[validators] == EMPTY_INDEX();
+}
+ghost mapping(bytes32 => uint256) validator_2_index {
+    init_state axiom forall bytes32 validators. validator_2_index[validators] == EMPTY_INDEX();
+}
