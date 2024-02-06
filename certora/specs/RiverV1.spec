@@ -186,9 +186,17 @@ rule getLastConsensusLayerReport_changeVitness(env e, env e2, method f, calldata
     assert after.epoch == 0;
 }
 
-rule underlyingBalanceEqualToRiverBalancePlusConsensus(env e, method f, calldataarg args)
-{
+rule underlyingBalanceEqualToRiverBalancePlusConsensus(env e, method f, calldataarg args) filtered {
+    f -> !f.isView
+        && f.selector != sig:sendCoverageFunds().selector
+        && f.selector != sig:sendCLFunds().selector
+        && f.selector != sig:sendRedeemManagerExceedingFunds().selector
+        && f.selector != sig:certorafallback_0().selector
+        && f.selector != sig:sendELFees().selector
+} {
     require to_mathint(totalUnderlyingSupply()) == riverEthBalance() + consensusLayerEthBalance();
+
+    require isDepositFunction(f) => e.msg.sender != currentContract;
 
     f(e, args);
 

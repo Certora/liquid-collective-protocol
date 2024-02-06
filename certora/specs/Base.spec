@@ -77,11 +77,11 @@ methods {
     function _.pullCoverageFunds(uint256) external => DISPATCHER(true);
 
     // OperatorsRegistryV1
-    function _.reportStoppedValidatorCounts(uint32[], uint256) external => DISPATCHER(true);
-    //function OperatorsRegistryV1.getStoppedAndRequestedExitCounts() external returns (uint32, uint256) envfree;
-    function _.getStoppedAndRequestedExitCounts() external => DISPATCHER(true);
-    function _.demandValidatorExits(uint256, uint256) external => DISPATCHER(true);
-    function _.pickNextValidatorsToDeposit(uint256) external => DISPATCHER(true); // has no effect - CERT-4615
+    // function _.reportStoppedValidatorCounts(uint32[], uint256) external => DISPATCHER(true);
+    // //function OperatorsRegistryV1.getStoppedAndRequestedExitCounts() external returns (uint32, uint256) envfree;
+    // function _.getStoppedAndRequestedExitCounts() external => DISPATCHER(true);
+    // function _.demandValidatorExits(uint256, uint256) external => DISPATCHER(true);
+    // function _.pickNextValidatorsToDeposit(uint256) external => DISPATCHER(true); // has no effect - CERT-4615
 
     function _.deposit(bytes,bytes,bytes,bytes32) external => DISPATCHER(true); // has no effect - CERT-4615
 
@@ -95,6 +95,10 @@ methods {
 }
 
 ghost mapping(bytes32 => mapping(uint => bytes32)) sliceGhost;
+
+function isDepositFunction(method f) returns bool {   
+    return f.selector == sig:depositAndTransfer(address).selector || f.selector == sig:deposit().selector;
+}
 
 function bytesSliceSummary(bytes buffer, uint256 start, uint256 len) returns bytes {
 	bytes to_ret;

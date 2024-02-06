@@ -312,7 +312,8 @@ rule pricePerShareStable(env e, method f) filtered {
     mathint pricePerShareBefore = mulDivDownAbstractPlus(totalETHBefore, 1, totalLsETHBefore);
 
     requireInvariant zeroAssetsZeroShares_invariant();
-    require e.msg.sender != currentContract;
+    require isDepositFunction(f) => e.msg.sender != currentContract;
+    // require e.msg.sender != currentContract;
 
     f(e, args);
 
@@ -344,7 +345,8 @@ rule conversionRateStable(env e, method f) filtered {
     mathint rateBefore = mulDivDownAbstractPlus(totalLsETHBefore, 1, totalETHBefore);
 
     requireInvariant zeroAssetsZeroShares_invariant();
-    require e.msg.sender != currentContract;
+    require isDepositFunction(f) => e.msg.sender != currentContract;
+    // require e.msg.sender != currentContract;
 
     f(e, args);
 

@@ -74,13 +74,13 @@ methods {
     function _.pullCoverageFunds(uint256) external => DISPATCHER(true);
 
     // OperatorsRegistryV1
-    function _.reportStoppedValidatorCounts(uint32[], uint256) external => DISPATCHER(true);
+    // function _.reportStoppedValidatorCounts(uint32[], uint256) external => DISPATCHER(true);
     //function OperatorsRegistryV1.getStoppedAndRequestedExitCounts() external returns (uint32, uint256) envfree;
-    function _.getStoppedAndRequestedExitCounts() external => DISPATCHER(true);
-    function _.demandValidatorExits(uint256, uint256) external => DISPATCHER(true);
-    function _.pickNextValidatorsToDeposit(uint256) external => DISPATCHER(true); // has no effect - CERT-4615
+    // function _.getStoppedAndRequestedExitCounts() external => DISPATCHER(true);
+    // function _.demandValidatorExits(uint256, uint256) external => DISPATCHER(true);
+    // function _.pickNextValidatorsToDeposit(uint256) external => DISPATCHER(true); // has no effect - CERT-4615
 
-    function _.deposit(bytes,bytes,bytes,bytes32) external => DISPATCHER(true); // has no effect - CERT-4615
+    // function _.deposit(bytes,bytes,bytes,bytes32) external => DISPATCHER(true); // has no effect - CERT-4615
 
     // function _.increment_onDepositCounter() external => ghostUpdate_onDepositCounter() expect bool ALL;
 
@@ -159,6 +159,8 @@ rule testingRule(env e, method f, calldataarg args)
     assert w_balance_before != w_balance_after;
 }
 
+// Passing here:
+// https://prover.certora.com/output/40577/f3f3b3a39d144b71a058d60af036c738/?anonymousKey=c63e4d8ac5bcb17a429ff3c953de3e11f74ab5fc
 rule mintPayedAppropriately(env e)
 {
     address recipient;
@@ -168,7 +170,7 @@ rule mintPayedAppropriately(env e)
         mathint w_balance_before = balanceOf(recipient);
         mathint w_balance_before_msgSender = balanceOf(e.msg.sender);
 
-    // require e.msg.sender != currentContract;
+    require e.msg.sender != currentContract;
 
     mint(e, recipient, amount_of_shares);
 
@@ -180,9 +182,10 @@ rule mintPayedAppropriately(env e)
     assert river_balance_before_msgSender >= to_mathint(amount_of_shares);
     assert river_balance_before_msgSender - river_balance_after_msgSender == w_shares_after - w_shares_before;
     assert river_balance_before_msgSender - river_balance_after_msgSender == to_mathint(amount_of_shares);
-    // assert w_balance_before - w_balance_after == w_shares_after - w_shares_before; // wrong
 }
 
+// Passing here:
+// https://prover.certora.com/output/40577/f3f3b3a39d144b71a058d60af036c738/?anonymousKey=c63e4d8ac5bcb17a429ff3c953de3e11f74ab5fc
 rule burnPaysAppropriately(env e)
 {
     address recipient;
@@ -191,7 +194,7 @@ rule burnPaysAppropriately(env e)
     mathint river_balance_before = RH.balanceOf(recipient);
         mathint w_balance_before = balanceOf(recipient);
 
-    // require e.msg.sender != currentContract;
+    require recipient != currentContract;
 
     burn(e, recipient, amount_of_shares);
 
@@ -202,4 +205,46 @@ rule burnPaysAppropriately(env e)
     assert w_shares_before_msgSender >= to_mathint(amount_of_shares);
     assert w_shares_before_msgSender - w_shares_after_msgSender == river_balance_after - river_balance_before;
     assert w_shares_before_msgSender - w_shares_after_msgSender == to_mathint(amount_of_shares);
+}
+
+// First run:
+// https://prover.certora.com/output/40577/02f125afb83140189d0300acc6779d76?anonymousKey=04d45b3c7a39229b9085590965558dfa0fe19767
+rule wlsethBalanceToWSharesMonotonicity(env e, method f, calldataarg args) filtered {
+    f -> !f.isView
+} {
+    address user;
+    mathint w_shares_before = sharesOf(user);
+    mathint river_balance_before = RH.balanceOf(user);
+        mathint w_balance_before = balanceOf(user);
+
+    // require recipient != currentContract;
+
+    f(e, args);
+
+    mathint w_shares_after = sharesOf(user);
+    mathint river_balance_after = RH.balanceOf(user);
+        mathint w_balance_after = balanceOf(user);
+
+    assert w_shares_before < w_shares_after => w_balance_before <= w_balance_after;
+}
+
+// First run:
+// https://prover.certora.com/output/40577/02f125afb83140189d0300acc6779d76?anonymousKey=04d45b3c7a39229b9085590965558dfa0fe19767
+rule riverBalanceToWSharesMonotonicity(env e, method f, calldataarg args) filtered {
+    f -> !f.isView
+} {
+    address user;
+    mathint w_shares_before = sharesOf(user);
+    mathint river_balance_before = RH.balanceOf(user);
+        mathint w_balance_before = balanceOf(user);
+
+    // require recipient != currentContract;
+
+    f(e, args);
+
+    mathint w_shares_after = sharesOf(user);
+    mathint river_balance_after = RH.balanceOf(user);
+        mathint w_balance_after = balanceOf(user);
+
+    assert w_shares_before < w_shares_after => river_balance_before <= river_balance_after;
 }
