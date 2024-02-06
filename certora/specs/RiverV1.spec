@@ -1,19 +1,11 @@
 import "Sanity.spec";
 import "MathSummaries.spec";
-import "Base.spec";
-
+import "RiverBase.spec";
 
 use rule method_reachability;
 
-// sanity passes here:
-// https://prover.certora.com/output/40577/2031abdd92254bafb49b487cb7466b12?anonymousKey=cef84e43b9a622eb29ce44539dba2dd9a9721096
-// sanity with less unresolved calls here:
-// https://prover.certora.com/output/40577/49c466500a5248b8b95e9a3a6a2ea245?anonymousKey=e1f4c6e3f2bc651eccad0ed1463ece870525478b
-
-
 methods {
-    // MathSummarizations
-    function _.mulDivDown(uint256 a, uint256 b, uint256 c) internal => mulDivDownAbstractPlus(a, b, c) expect uint256 ALL;
+    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivLIA(a, b, c);
 }
 
 
@@ -140,7 +132,7 @@ rule underlyingBalanceEqualToRiverBalancePlusConsensus_claimRedeemRequests(env e
     assert to_mathint(totalUnderlyingSupply()) == riverEthBalance() + consensusLayerEthBalance();
 }
 
-rule consensusLayerEth_changeVitness(env e, method f, calldataarg args)
+rule consensusLayerEth_changeWitness(env e, method f, calldataarg args)
 {
     mathint consensusLayerBalanceBefore = consensusLayerEthBalance();
 
@@ -151,7 +143,7 @@ rule consensusLayerEth_changeVitness(env e, method f, calldataarg args)
     assert consensusLayerBalanceBefore == consensusLayerBalanceAfter; // To see which function can change this
 }
 
-rule consensusLayerDepositSize_changeVitness(env e, method f, calldataarg args)
+rule consensusLayerDepositSize_changeWitness(env e, method f, calldataarg args)
 {
     mathint depositSizeBefore = consensusLayerDepositSize();
 
@@ -159,11 +151,10 @@ rule consensusLayerDepositSize_changeVitness(env e, method f, calldataarg args)
 
     mathint depositSizeAfter = consensusLayerDepositSize();
 
-    assert depositSizeAfter == 2;
-//    satisfy depositSizeBefore != depositSizeAfter; // To see which function can change this
+    satisfy depositSizeBefore != depositSizeAfter; // To see which function can change this
 }
 
-rule getCLValidatorTotalBalance_changeVitness(env e, env e2, method f, calldataarg args)
+rule getCLValidatorTotalBalance_changeWitness(env e, env e2, method f, calldataarg args)
 {
     mathint before = getCLValidatorTotalBalance(e2);
 
@@ -206,7 +197,7 @@ rule underlyingBalanceEqualToRiverBalancePlusConsensus(env e, method f, calldata
 //     assert false;
 // }
 
-// @title When user deposits, there is no additional gift component to the deposit.
+/// @title When user deposits, there is no additional gift component to the deposit.
 // Passing here:
 // https://prover.certora.com/output/40577/ab8a00d9e5804d6eb56316149457cbf8/?anonymousKey=224f9317520c66cc0c214cb632a02918577a85ef
 rule depositAdditivityNoGiftsToEachDeposit(env e1, env e2, env eSum) {
@@ -233,3 +224,18 @@ rule depositAdditivityNoGiftsToEachDeposit(env e1, env e2, env eSum) {
 
     assert shares1 + shares2 <= sharesSum + sharesBefore;
 }
+
+rule onlyOneValidEpoch(uint256 epoch1, uint256 epoch2) {
+    env e;
+    require getCLSpec(e).epochsPerFrame > getCLSpec(e).epochsToAssumedFinality;
+    assert epoch1 != epoch2 => !(isValidEpoch(e, epoch1) && isValidEpoch(e, epoch2));
+}
+
+invariant EpochIsFullFrame(env e)
+    getCLSpec(e).epochsPerFrame !=0 => getLastConsensusLayerReport(e).epoch % getCLSpec(e).epochsPerFrame == 0
+    filtered{f -> f.selector != sig:setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport).selector}
+    {
+        preserved with (env eP) {
+            require e.block.timestamp == eP.block.timestamp;
+        }
+    }

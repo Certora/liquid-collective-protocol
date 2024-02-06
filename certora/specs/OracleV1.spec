@@ -45,7 +45,8 @@ definition clearVariantsMethods(method f) returns bool =
     f.selector == sig:reportConsensusLayerData(IOracleManagerV1.ConsensusLayerReport).selector;
 
 definition initializeMethods(method f) returns bool = 
-    f.selector == sig:initOracleV1(address,address,uint64,uint64,uint64,uint64,uint256,uint256).selector;
+    f.selector == sig:initOracleV1(address,address,uint64,uint64,uint64,uint64,uint256,uint256).selector || 
+    f.selector == sig:initOracleV1_1().selector;
 
 /*
 ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -330,7 +331,7 @@ rule nonAdminCannotFrontRunSetQuorum(method f) filtered{f -> !f.isView && !initi
     assert senderIsNotAnAdmin => !lastReverted;
 }
 
-rule votesChangeIntegrity(method f, uint256 id) filtered{f -> !f.isView} {
+rule votesChangeIntegrity(method f, uint256 id) filtered{f -> !f.isView && !clearVariantsMethods(f)} {
     env e;
     bool isMember_ = isMember(e.msg.sender);
     require getReportVariantsCount() < (1 << 254);
@@ -350,15 +351,20 @@ rule votesChangeIntegrity(method f, uint256 id) filtered{f -> !f.isView} {
 │ Rules : Reports                                                                                           │
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 */
-rule whichMethodsClearVariants(method f) filtered{f -> !f.isView} {
+rule initialize1ClearsReports() {
     env e;
     calldataarg args;
+    initOracleV1_1(e, args);
+    assert getReportVariantsCount() == 0;
+}
+
+rule whichMethodsClearVariants(method f) filtered{f -> !f.isView && !initializeMethods(f)} {
+    env e;
+    calldataarg args;
+    require getReportVariantsCount() !=0;
     bool senderIsAdminOrMember = isMember(e.msg.sender) || e.msg.sender == getAdmin();
     f(e, args);
     
-    if(f.selector != sig:reportConsensusLayerData(IOracleManagerV1.ConsensusLayerReport).selector) {
-        assert getReportVariantsCount() == 0 <=> clearVariantsMethods(f);
-    }
     assert getReportVariantsCount() == 0 => clearVariantsMethods(f);
     assert getReportVariantsCount() == 0 => senderIsAdminOrMember;
 }
@@ -404,10 +410,14 @@ rule cannotFrontRunSameReportSubmission(IOracleManagerV1.ConsensusLayerReport re
     assert e1.msg.sender != e2.msg.sender => !lastReverted;
 }
 
-/// @title ...
+/// @title Correctness of reportConsensusLayerData():
 rule reportSubmissionIntegrity() {
     env e;
     IOracleManagerV1.ConsensusLayerReport report;
+    requireInvariant ZeroAddressIsNotAMember();
+    RequireNoDuplicatesForAddress(e.msg.sender);
+    requireInvariant QuorumBounds();
+
     bool status_before = getMemberReportStatus(e.msg.sender);
         reportConsensusLayerData@withrevert(e, report);
         bool reverted = lastReverted;

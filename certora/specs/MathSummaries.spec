@@ -1,6 +1,7 @@
 import "CVLMath.spec";
 
 ghost mulDivArbitrary(uint256, uint256, uint256) returns uint256;
+
 persistent ghost mapping(uint256 => mapping(uint256 => uint256)) _mulDivGhost {
     /// Monotonically increasing
     axiom forall uint256 xy1. forall uint256 xy2. forall uint256 z.

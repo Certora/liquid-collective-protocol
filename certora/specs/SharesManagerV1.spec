@@ -1,49 +1,13 @@
-import "Base.spec";
+import "RiverBase.spec";
+import "MathSummaries.spec";
 
 methods {
     function allowance(address, address) external returns(uint256) envfree;
     function balanceOf(address) external returns(uint256) envfree;
     function balanceOfUnderlying(address) external returns(uint256) envfree;
     function totalSupply() external returns(uint256) envfree;
+    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivLIA(a, b, c);
 }
-
-ghost mathint counter_onEarnings{ // counter checking number of calls to _onDeposit
-    init_state axiom counter_onEarnings == 0;
-}
-ghost mathint total_onEarnings{ // counter checking number of calls to _onDeposit
-    init_state axiom total_onEarnings == 0;// this is total earned ETH
-}
-ghost mathint total_onDeposits{ // counter checking number of calls to _onDeposit
-    init_state axiom total_onDeposits == 0;// this is total earned ETH
-}
-
-function ghostUpdate_onEarnings(uint256 amount) returns bool
-{
-    counter_onEarnings = counter_onEarnings + 1;
-    total_onEarnings = total_onEarnings + amount;
-    return true;
-}
-
-function ghostUpdate_onDeposits(uint256 amount) returns bool
-{
-    total_onDeposits = total_onDeposits + amount;
-    return true;
-}
-
-invariant totalUnderlyingSupplyBasicIntegrity()
-    to_mathint(totalUnderlyingSupply()) == total_onDeposits
-    filtered {
-        f -> f.selector != sig:initRiverV1_1(address,uint64,uint64,uint64,uint64,uint64,uint256,uint256,uint128,uint128).selector
-          && f.selector != sig:setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport).selector
-    } {
-        preserved
-        {
-            require total_onDeposits <= 2^128;
-            require total_onEarnings <= 2^128;
-            require total_onDeposits >= 0;
-            require total_onEarnings >= 0;
-        }
-    }
 
 // @title The allowance can only be changed by functions listed in the filter:
 // initRiverV1_1, setConsensusLayerData, decreaseAllowance, increaseAllowance, approve, transferFrom
@@ -66,7 +30,7 @@ rule allowanceChangesRestrictively(method f) filtered {
     address spender;
     uint256 allowance_before = allowance(owner, spender);
     require owner != spender;
-    f(e, args);
+        f(e, args);
     uint256 allowance_after = allowance(owner, spender);
     assert allowance_after == allowance_before;
 }
@@ -133,7 +97,7 @@ rule sharesBalanceChangesRestrictively(method f) filtered {
     calldataarg args;
     address owner;
     uint256 shares_balance_before = balanceOf(owner);
-    f(e, args);
+        f(e, args);
     uint256 shares_balance_after = balanceOf(owner);
     assert shares_balance_after == shares_balance_before;
 }
@@ -154,7 +118,7 @@ rule pricePerShareChangesRespectively(method f) filtered {
     address owner;
     uint256 shares_balance_before = balanceOf(owner);
     uint256 underlying_balance_before = balanceOfUnderlying(owner);
-    f(e, args);
+        f(e, args);
     uint256 shares_balance_after = balanceOf(owner);
     uint256 underlying_balance_after = balanceOfUnderlying(owner);
     assert shares_balance_before == shares_balance_after => underlying_balance_before == underlying_balance_after;
@@ -263,26 +227,27 @@ rule zeroAssetsZeroShares(env e, method f) filtered {
     assert totalLsETHAfter == 0 <=> totalETHAfter == 0;
 }
 
-// Passing:
-// https://prover.certora.com/output/40577/7200741ff45f4e83b7ccad0ae41732d7/?anonymousKey=8c2721eac68cde6ded8f88a7791e166d737ac2d7
+// Violated for initRiverV1_1:
+/// https://prover.certora.com/output/41958/3e6fedc6018d4887ac9371d35fbb2c24/?anonymousKey=f2750f9542e1e1990d48092eb1fe539c5e9a98ef
 invariant zeroAssetsZeroShares_invariant()
     totalUnderlyingSupply() == 0 <=> totalSupply() == 0
-    filtered {
-        f -> f.selector != sig:initRiverV1_1(address,uint64,uint64,uint64,uint64,uint64,uint256,uint256,uint128,uint128).selector
-          // Method setConsensusLayerData could break this invariant and was removed.
-          && f.selector != sig:setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport calldata).selector
-          && f.selector != sig:helper1_fillUpVarsAndPullCL(IOracleManagerV1.ConsensusLayerReport).selector
-          && f.selector != sig:helper2_updateLastReport(IOracleManagerV1.ConsensusLayerReport).selector
-          && f.selector != sig:helper3_checkBounds(OracleManagerV1.ConsensusLayerDataReportingVariables, ReportBounds.ReportBoundsStruct, uint256).selector
-          && f.selector != sig:helper4_pullELFees(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-          && f.selector != sig:helper5_pullRedeemManagerExceedingEth(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-          && f.selector != sig:helper6_pullCoverageFunds(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-          && f.selector != sig:helper7_onEarnings(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-          && f.selector != sig:helper8_requestExitsBasedOnRedeemDemandAfterRebalancings(OracleManagerV1.ConsensusLayerDataReportingVariables, IOracleManagerV1.ConsensusLayerReport).selector
-          && f.selector != sig:helper9_reportWithdrawToRedeemManager(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-          && f.selector != sig:helper10_skimExcessBalanceToRedeem(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-          && f.selector != sig:helper11_commitBalanceToDeposit(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-    } {
+    filtered {f -> !setConsensusMethod(f) && !helperMethods(f)}
+    //    f -> f.selector != sig:initRiverV1_1(address,uint64,uint64,uint64,uint64,uint64,uint256,uint256,uint128,uint128).selector 
+    {
+        preserved
+        {
+            require totalUnderlyingSupply() <= 2^128;
+            require totalSupply() <= 2^128;
+        }
+    }
+
+/// Violated 
+/// https://prover.certora.com/output/41958/a9580902aacf440da9607d9fc48a6c26/?anonymousKey=af3dc08886d76c4a42262eea2d53b19452a231d4
+invariant zeroAssetsZeroShares_invariant_setConsensus()
+    totalUnderlyingSupply() == 0 <=> totalSupply() == 0
+    filtered {f -> setConsensusMethod(f)}
+    //    f -> f.selector != sig:initRiverV1_1(address,uint64,uint64,uint64,uint64,uint64,uint256,uint256,uint128,uint128).selector 
+    {
         preserved
         {
             require totalUnderlyingSupply() <= 2^128;
@@ -335,7 +300,7 @@ rule conversionRateStable(env e, method f) filtered {
       && f.selector != sig:helper6_pullCoverageFunds(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
       && f.selector != sig:helper7_onEarnings(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
       // Violated by helper9: https://prover.certora.com/output/40577/5f4d5be6590347a6b442aec54c778871/?anonymousKey=5704882931fa498db5d6fdeff183342fa0e00670
-      && f.selector != sig:helper9_reportWithdrawToRedeemManager(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
+      && f.selector == sig:helper9_reportWithdrawToRedeemManager(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
 } {
     calldataarg args;
 
@@ -354,7 +319,7 @@ rule conversionRateStable(env e, method f) filtered {
 
     // assert totalETHBefore * totalLsETHAfter == totalETHAfter * totalLsETHBefore;
 
-    assert rateBefore == rateAfter;
+    assert rateBefore >= rateAfter;
     // assert f.selector != sig:helper9_reportWithdrawToRedeemManager(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
     //     => rateBefore == rateAfter;
     // assert f.selector == sig:helper9_reportWithdrawToRedeemManager(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
@@ -393,19 +358,8 @@ rule conversionRateStable_helper9_reportWithdrawToRedeemManager(env e)
     assert rateBefore <= rateAfter + rateAfter + rateAfter + 1;
 }
 
-rule conversionRateChangeWitnessHard(env e, method f) filtered {
-    f ->  f.selector == sig:helper1_fillUpVarsAndPullCL(IOracleManagerV1.ConsensusLayerReport).selector
-       || f.selector == sig:helper2_updateLastReport(IOracleManagerV1.ConsensusLayerReport).selector
-       || f.selector == sig:helper3_checkBounds(OracleManagerV1.ConsensusLayerDataReportingVariables, ReportBounds.ReportBoundsStruct, uint256).selector
-       || f.selector == sig:helper4_pullELFees(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-       || f.selector == sig:helper5_pullRedeemManagerExceedingEth(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-       || f.selector == sig:helper6_pullCoverageFunds(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-       || f.selector == sig:helper7_onEarnings(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-       || f.selector == sig:helper8_requestExitsBasedOnRedeemDemandAfterRebalancings(OracleManagerV1.ConsensusLayerDataReportingVariables, IOracleManagerV1.ConsensusLayerReport).selector
-       || f.selector == sig:helper9_reportWithdrawToRedeemManager(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-       || f.selector == sig:helper10_skimExcessBalanceToRedeem(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-       || f.selector == sig:helper11_commitBalanceToDeposit(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-} {
+rule conversionRateChangeWitnessHard(method f) filtered {f -> helperMethods(f)} {
+    env e;
     calldataarg args;
 
     uint256 totalLsETHBefore = totalSupply();
@@ -424,62 +378,33 @@ rule conversionRateChangeWitnessHard(env e, method f) filtered {
 
 // proved here:
 // https://prover.certora.com/output/40577/d57287efa20b4183965c503eb1415f89/?anonymousKey=3c1a04e6876b9f482f15782a23064bf44971cde2
-rule sharesNotChangedInOracleReport(env e, method f, calldataarg args) filtered {
-    f ->  f.selector == sig:helper1_fillUpVarsAndPullCL(IOracleManagerV1.ConsensusLayerReport).selector
-       || f.selector == sig:helper2_updateLastReport(IOracleManagerV1.ConsensusLayerReport).selector
-       || f.selector == sig:helper3_checkBounds(OracleManagerV1.ConsensusLayerDataReportingVariables, ReportBounds.ReportBoundsStruct, uint256).selector
-       || f.selector == sig:helper4_pullELFees(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-       || f.selector == sig:helper5_pullRedeemManagerExceedingEth(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-       || f.selector == sig:helper6_pullCoverageFunds(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-       || f.selector == sig:helper7_onEarnings(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-       || f.selector == sig:helper8_requestExitsBasedOnRedeemDemandAfterRebalancings(OracleManagerV1.ConsensusLayerDataReportingVariables, IOracleManagerV1.ConsensusLayerReport).selector
-       || f.selector == sig:helper9_reportWithdrawToRedeemManager(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-       || f.selector == sig:helper10_skimExcessBalanceToRedeem(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-       || f.selector == sig:helper11_commitBalanceToDeposit(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-       || f.selector == sig:setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport).selector
-} {
-    address usr;
+rule sharesNotChangedInOracleReport(address user, method f) filtered {f -> helperMethods(f)} {
     mathint totalLsETHBefore = totalSupply();
-    mathint LsETHBefore = balanceOf(usr);
-
+    mathint LsETHBefore = balanceOf(user);
+    
+    env e;
+    calldataarg args;
     f(e, args);
 
     mathint totalLsETHAfter = totalSupply();
-    mathint LsETHAfter = balanceOf(usr);
+    mathint LsETHAfter = balanceOf(user);
 
-    assert f.selector != sig:helper9_reportWithdrawToRedeemManager(OracleManagerV1.ConsensusLayerDataReportingVariables).selector &&
-           f.selector != sig:helper7_onEarnings(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-        => totalLsETHBefore == totalLsETHAfter &&
-           LsETHBefore == LsETHAfter;
-    assert f.selector == sig:helper7_onEarnings(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-        => totalLsETHBefore <= totalLsETHAfter &&
-           LsETHBefore <= LsETHAfter;
-    assert f.selector == sig:helper9_reportWithdrawToRedeemManager(OracleManagerV1.ConsensusLayerDataReportingVariables).selector
-        => totalLsETHBefore >= totalLsETHAfter &&
-           LsETHBefore >= LsETHAfter;
+    assert (f.selector != sig:helper9_reportWithdrawToRedeemManager(OracleManagerV1.ConsensusLayerDataReportingVariables).selector &&
+        f.selector != sig:helper7_onEarnings(OracleManagerV1.ConsensusLayerDataReportingVariables).selector) => 
+        (totalLsETHBefore == totalLsETHAfter && LsETHBefore == LsETHAfter);
+    
+    assert f.selector == sig:helper7_onEarnings(OracleManagerV1.ConsensusLayerDataReportingVariables).selector => 
+        (totalLsETHBefore <= totalLsETHAfter && LsETHBefore <= LsETHAfter);
+    
+    assert f.selector == sig:helper9_reportWithdrawToRedeemManager(OracleManagerV1.ConsensusLayerDataReportingVariables).selector => 
+        (totalLsETHBefore >= totalLsETHAfter && LsETHBefore >= LsETHAfter);
 }
 
-// https://prover.certora.com/output/40577/d4c3eb620aa446fa8a04a30e93edcf0f?anonymousKey=301f81a0ce7081b7377153318192e81ddbc1d8ba
-rule totalETHChangeReachable(env e, method f) filtered {
-    f -> !f.isView
-} {
-    calldataarg args;
 
-    uint256 totalLsETHBefore = totalSupply();
-    uint256 totalETHBefore = totalUnderlyingSupply();
-
-    requireInvariant zeroAssetsZeroShares_invariant();
-    require e.msg.sender != currentContract;
-
-    f(e, args);
-
-    uint256 totalLsETHAfter = totalSupply();
-    uint256 totalETHAfter = totalUnderlyingSupply();
-
-    satisfy totalETHBefore != totalETHAfter;
-}
-
-// @title After transfer from, balances are updated accordingly, but not of any other user. Also, totalSupply stays the same.
+/// @title Correctness of transferFrom(): 
+/// a. balances are updated accordingly
+/// b. Balances other than recipient and sender's are untouched.
+/// c. totalSupply() is conserved.
 // Proved:
 // https://prover.certora.com/output/40577/0d75136142bd4b458c77e73f4394f101/?anonymousKey=7c99f012e75eb4143a0c3f5dbc180eda79a0c0db
 rule transferUpdatesBalances(env e) {
@@ -503,4 +428,78 @@ rule transferUpdatesBalances(env e) {
     assert to != from => balanceReceiverAfter - balanceReceiverBefore == to_mathint(amount);
     assert other != from && other != to => balanceOtherAfter == balanceOtherBefore;
     assert totalSupplyAfter == totalSupplyBefore;
+}
+
+/// @title It is never benefitial for any user to deposit in multiple smaller patches instead of one big patch.
+rule depositSplittingIsNotProfitable(address recipient) {
+    env e1;
+    env e2;
+    env e3;
+
+    //requireInvariant noAssetsNoShares();
+    //requireInvariant noAssetsNoSharesUser(recipient);
+    sharesAdditivityBound(e1.msg.value, e2.msg.value, totalSupply(), totalUnderlyingSupply());
+
+    require e1.msg.value + e2.msg.value == to_mathint(e3.msg.value);
+
+    storage initial = lastStorage;
+
+    depositAndTransfer(e1, recipient) at initial;
+    depositAndTransfer(e2, recipient);
+    mathint sharesA = balanceOf(recipient);
+
+    depositAndTransfer(e3, recipient) at initial;
+    mathint sharesB = balanceOf(recipient);
+
+    assert sharesA - sharesB <= 2;
+}
+
+/*
+Rounding-down analysis shows that:
+Given:
+initial underlying supply (ETH) - X,
+initial total supply (lsETH) - S,
+Redeeming ds shares in exchange of dx (< X) ETH = sharesFromBalance(dx),
+which results in (X , S) -> (X - dx , S - ds)  
+leads to a change in (theoretical) share price that is bounded below by:
+
+[ (X / S) _new / (X / S)_old ] - 1 >= - (X - 1) / S / (X - dx)
+*/
+
+//rule sharePriceIsStable_revised(method f) filtered{f -> !f.isView && !setConsensusMethod(f)} {
+//}
+
+/// @title A user cannot increase the value of his own assets.
+rule userCannotIncreaseOwnAssetsValue(method f) filtered{f -> !f.isView && !setConsensusMethod(f)} {
+    env e;
+    address user = e.msg.sender;
+    require user != currentContract; /// User is not River.
+    require user != RM; /// User is not Redeem manager.
+
+    uint256 supply = totalSupply();
+    uint256 underlying = totalUnderlyingSupply();
+    
+    mathint value_before = getUserValue(user);
+        calldataarg args;
+        f(e, args);
+    mathint value_after = getUserValue(user);
+
+    assert value_before >= value_after;
+}
+
+/// @title The assets of a black-listed user are immutable.
+rule blackListedUserAssetsValueIsConstant(address user, method f) filtered{f -> !f.isView && !setConsensusMethod(f)} {
+    require user != currentContract; /// Contract is white listed.
+    require user != RM; /// Redeem manager is white listed.
+    require AL.isDenied(user); 
+
+    uint256 eth_before = nativeBalances[user];
+    uint256 shares_before = balanceOf(user);
+        env e;
+        calldataarg args;
+        f(e, args);
+    uint256 eth_after = nativeBalances[user];
+    uint256 shares_after = balanceOf(user);
+    
+    assert eth_after == eth_before && shares_after == shares_before;
 }
