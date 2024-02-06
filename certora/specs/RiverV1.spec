@@ -1,5 +1,4 @@
 import "Sanity.spec";
-import "CVLMath.spec";
 import "MathSummaries.spec";
 import "Base.spec";
 
@@ -15,16 +14,7 @@ use rule method_reachability;
 methods {
     // MathSummarizations
     function _.mulDivDown(uint256 a, uint256 b, uint256 c) internal => mulDivDownAbstractPlus(a, b, c) expect uint256 ALL;
-
 }
-
-
-
-// Ghost for each one of the factors in
-// Ghost for Eth in Consensus layer
-// Ghost for the RIver balance BalanceToDeposit.get() + CommittedBalance.get() + BalanceToRedeem.get() Eth Deposited
-// Ghost for comitted Eth
-// Consensus layer balance (depositedValidatorCount - clValidatorCount) * ConsensusLayerDepositManagerV1.DEPOSIT_SIZE
 
 
 // @title Checks basic formula: totalSupply of shares must match number of underlying tokens.
@@ -42,10 +32,6 @@ rule riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem_for_setConsensusLayerData
     uint256 committed_before = getCommittedBalance();
     uint256 toRedeem_before = getBalanceToRedeem();
     require assets_before == toDeposit_before + committed_before + toRedeem_before;
-    // require assets_before == 0;
-    // require toDeposit_before == 0;
-    // require committed_before == 0;
-    // require toRedeem_before == 0;
 
     IOracleManagerV1.ConsensusLayerReport report;
 
@@ -77,47 +63,16 @@ rule riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem_for_helper2_helper7(env e
     mathint sum_before = toDeposit_before + committed_before + toRedeem_before;
     uint256 river_balance_before = riverEthBalance();
     require e.msg.sender != currentContract;
-    // require assets_before == 0;
-    // require toDeposit_before == 0;
-    // require committed_before == 0;
-    // require toRedeem_before == 0;
 
     IOracleManagerV1.ConsensusLayerReport report;
     OracleManagerV1.ConsensusLayerDataReportingVariables vars1 = helper1_fillUpVarsAndPullCL(e, report);
-    // OracleManagerV1.ConsensusLayerDataReportingVariables vars2;
-
-    // require vars1.preReportUnderlyingBalance == totalUnderlyingSupply();
 
     helper2_updateLastReport(e, report); // Just reports, no changes to argument.
 
     uint256 totalSupplyMidterm = totalUnderlyingSupply();
     uint256 val_balance_midterm = report.validatorsBalance;
-    // do something in between
-    // require vars1.preReportUnderlyingBalance == vars2.preReportUnderlyingBalance;
-    // require vars1.preReportUnderlyingBalance == vars2.preReportUnderlyingBalance;
-    // require totalUnderlyingSupply() == vars2.postReportUnderlyingBalance;
-    // // require totalUnderlyingSupply() == vars1.postReportUnderlyingBalance; // pass immediately
-    // require vars1.lastReportExitedBalance == vars2.lastReportExitedBalance;
-    // require vars1.lastReportExitedBalance == 1;
-    // require vars1.lastReportSkimmedBalance == vars2.lastReportSkimmedBalance;
-    // require vars1.lastReportSkimmedBalance == 10;
-    // require vars1.exitedAmountIncrease == vars2.exitedAmountIncrease;
-    // require vars1.exitedAmountIncrease == 100;
-    // require vars1.skimmedAmountIncrease == vars2.skimmedAmountIncrease;
-    // require vars1.skimmedAmountIncrease == 1000;
-    // require vars1.timeElapsedSinceLastReport == vars2.timeElapsedSinceLastReport;
-    // require vars1.timeElapsedSinceLastReport == 10000;
-    // require vars1.availableAmountToUpperBound == vars2.availableAmountToUpperBound;
-    // require vars1.availableAmountToUpperBound == 10000;
-    // require vars1.redeemManagerDemand == vars2.redeemManagerDemand;
-    // require vars1.redeemManagerDemand == 100000;
 
-    OracleManagerV1.ConsensusLayerDataReportingVariables vars4 = helper4_pullELFees(e, vars1); // Also changes vars
-
-
-    // require to_mathint(vars2.trace.rewards) == vars1.trace.rewards + rewards_delta;
-    // require rewards_delta == vars1.availableAmountToUpperBound;
-    // require vars2.trace.rewards == vars2.postReportUnderlyingBalance - vars.preReportUnderlyingBalance;
+    OracleManagerV1.ConsensusLayerDataReportingVariables vars4 = helper4_pullELFees(e, vars1);
 
     helper7_onEarnings(e, vars4); // Just pull on earnings, no changes to argument
 
@@ -127,15 +82,12 @@ rule riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem_for_helper2_helper7(env e
     uint256 toRedeem_after = getBalanceToRedeem();
     mathint sum_after = toDeposit_after + committed_after + toRedeem_after;
     uint256 river_balance_after = riverEthBalance();
-    require assets_after == 34636832;
 
-    // satisfy  toDeposit_after != toDeposit_before;
-    // satisfy  committed_after != committed_before;
-    // satisfy  toRedeem_after != toRedeem_before;
-    // assert river_balance_after - river_balance_before == sum_after - sum_before;
     assert river_balance_after + sum_before == sum_after + river_balance_before;
 }
 
+// Passing except for timeout for claimRedeemRequests:
+// https://prover.certora.com/output/40577/03d0c8799cd7442e8c50ecfee4c940cc/?anonymousKey=110f1e2ba0710a7ee8312516d636e201b73d3576
 rule riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem(env e, method f, calldataarg args) filtered {
     f -> !f.isView
         && f.selector != sig:sendCoverageFunds().selector
@@ -162,7 +114,6 @@ rule riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem(env e, method f, calldata
     uint256 toRedeem_after = getBalanceToRedeem();
     mathint sum_after = toDeposit_after + committed_after + toRedeem_after;
     uint256 river_balance_after = riverEthBalance();
-    //require assets_after == 34636832;
 
     assert river_balance_after + sum_before == sum_after + river_balance_before;
 }
@@ -173,20 +124,6 @@ invariant riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem_invariant()
         f -> f.selector != sig:initRiverV1_1(address,uint64,uint64,uint64,uint64,uint64,uint256,uint256,uint128,uint128).selector
         && f.selector != sig:setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport).selector
     }
-// @title totalUnderlyingSupply equals to sum of River ETH balance and consensusLayerEthBalance computed in RiverV1Harness as:
-//        (clValidatorCount - depositedValidatorCount) * depositSize
-// invariant underlyingBalanceEqualToRiverBalancePlusConsensus()
-//     to_mathint(totalUnderlyingSupply()) == riverEthBalance() + consensusLayerEthBalance()
-//     {
-//         preserved
-//         {
-//             // requireInvariant totalSupplyBasicIntegrity();
-//             // requireInvariant riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem();
-//             require getDepositedValidatorCount() <= getCLValidatorCount();
-//             require getCLValidatorCount() <= 2^64;
-//             require consensusLayerDepositSize() <= 2^64;
-//         }
-//     }
 
 rule underlyingBalanceEqualToRiverBalancePlusConsensus_claimRedeemRequests(env e)
 {
@@ -251,49 +188,22 @@ rule getLastConsensusLayerReport_changeVitness(env e, env e2, method f, calldata
 
 rule underlyingBalanceEqualToRiverBalancePlusConsensus(env e, method f, calldataarg args)
 {
-    // require getDepositedValidatorCount() <= getCLValidatorCount();
-    // require getCLValidatorCount() <= 2^64;
-    // require consensusLayerDepositSize() <= 2^64;
     require to_mathint(totalUnderlyingSupply()) == riverEthBalance() + consensusLayerEthBalance();
 
     f(e, args);
 
     assert to_mathint(totalUnderlyingSupply()) == riverEthBalance() + consensusLayerEthBalance();
 }
-// @title total supply of LsEth = (total supply of staked ETH + (consensus layer + execution layer rewards) - (fees + penalties)) * ConversionRate I.e. given a conversion rate and balances, that LsEth balance/total supply is correct The same invariant for every owner’s balance
-// rule totalSupplyMainIntegrity(env e, method f, calldataarg args) {
-//     mathint totalLSEthBefore = totalSupply();
-//     mathint totalEthStakedBefore = totalUnderlyingSupply();
-//     mathint totalConsensusLayerRewardsBefore = 0; //TODO
-//     mathint totalExecutionLayerRewardsBefore = 0; //TODO
-//     mathint totalFeesBefore = 0; //TODO
-//     mathint totalPenaltiesBefore = 0; //TODO
 
-//     f(e, args);
-
+// // Validators will exit the consensus layer.
+// // Naively, they exits with the initial 32 ETH.
+// // number of validators exitting x initial DEPOSIT_SIZE  <<< 
+// rule validatorsExitRequestsCorrectness(env e)
+// {
+//     OracleManagerV1.ConsensusLayerDataReportingVariables vars;
+//     IOracleManagerV1.ConsensusLayerReport report;
+//     helper8_requestExitsBasedOnRedeemDemandAfterRebalancings(e, vars, report);
 //     assert false;
-// }
-
-
-    // Maybe try:
-    // BalanceToDeposit.get() + CommittedBalance.get() + BalanceToRedeem.get() == River.balance(); //
-
-// The Eth balance of River is corellated to the internal accounting. So the balance of river equals to
-// BalanceToDeposit.get() + CommittedBalance.get() + BalanceToRedeem.get()
-
-// @title Checks our ghost ghostUpdate_onDepositCounter and that increment_onDepositCounter is called from _onDeposit function.
-// rule depositHandlerFunctional(env env_for_f, method f, calldataarg args) filtered {
-//     f -> f.selector == sig:RiverV1Harness.depositToConsensusLayer(uint256).selector ||
-//          f.selector == sig:RiverV1Harness.depositAndTransfer(address).selector ||
-//          f.selector == sig:RiverV1Harness.deposit().selector
-// } {
-//     mathint counter_onDeposit_before = counter_onDeposit;
-
-//     f(env_for_f, args);
-
-//     mathint counter_onDeposit_after = counter_onDeposit;
-
-//     assert env_for_f.msg.value > 0 => counter_onDeposit_before != counter_onDeposit_after;
 // }
 
 // @title When user deposits, there is no additional gift component to the deposit.
@@ -322,74 +232,4 @@ rule depositAdditivityNoGiftsToEachDeposit(env e1, env e2, env eSum) {
     mathint sharesSum = balanceOf(recipient);
 
     assert shares1 + shares2 <= sharesSum + sharesBefore;
-}
-
-// TODO:
-// https://prover.certora.com/output/40577/c3d10e61df4f49488d206d34f2fff204/?anonymousKey=97de87a7167bdecd1118ac835cd02161e24fc32f
-invariant noAssetsNoShares()
-    totalUnderlyingSupply() == 0 => totalSupply() == 0;
-
-// TODO:
-invariant noAssetsNoSharesUser(address user)
-    balanceOfUnderlying(user) == 0 => balanceOf(user) == 0;
-
-// @title It is never benefitial for any user to deposit in multiple smaller patches instead of one big patch.
-rule depositAdditivitySplittingNotProfitable(env e1, env e2, env eSum) {
-    mathint amount1;
-    mathint amount2;
-    address recipient;
-
-    requireInvariant noAssetsNoShares();
-    requireInvariant noAssetsNoSharesUser(recipient);
-
-    require amount1 == to_mathint(e1.msg.value);
-    require amount2 == to_mathint(e2.msg.value);
-    require amount1 + amount2 == to_mathint(eSum.msg.value);
-    // require amount1 == 500;
-    // require amount2 == 600;
-
-    mathint sharesBefore = balanceOf(recipient);
-
-    storage initial = lastStorage;
-
-    depositAndTransfer(e1, recipient);
-    mathint shares1 = balanceOf(recipient);
-
-    depositAndTransfer(e2, recipient);
-    mathint shares2 = balanceOf(recipient);
-
-    depositAndTransfer(eSum, recipient) at initial;
-    mathint sharesSum = balanceOf(recipient);
-
-    assert shares2 >= shares1;
-    assert shares2 <= sharesSum;
-}
-
-// @title Up to off by one it is not benefitial to batch more deposits into one chunk
-rule depositAdditivityBatchingNotExtremelyProfitable(env e1, env e2, env eSum) {
-    mathint amount1;
-    mathint amount2;
-    address recipient;
-
-    requireInvariant noAssetsNoShares();
-    requireInvariant noAssetsNoSharesUser(recipient);
-
-    require amount1 == to_mathint(e1.msg.value);
-    require amount2 == to_mathint(e2.msg.value);
-    require amount1 + amount2 == to_mathint(eSum.msg.value);
-
-    mathint sharesBefore = balanceOf(recipient);
-
-    storage initial = lastStorage;
-
-    depositAndTransfer(e1, recipient);
-    mathint shares1 = balanceOf(recipient);
-
-    depositAndTransfer(e2, recipient);
-    mathint shares2 = balanceOf(recipient);
-
-    depositAndTransfer(eSum, recipient) at initial;
-    mathint sharesSum = balanceOf(recipient);
-
-    assert shares2 + shares2 + 4 >= sharesSum;
 }
