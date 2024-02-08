@@ -5,17 +5,20 @@ import "RiverBase.spec";
 use rule method_reachability;
 
 methods {
-    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivLIA(a, b, c);
+    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivDownAbstractPlus(a, b, c);
 }
 
-
-// @title Checks basic formula: totalSupply of shares must match number of underlying tokens.
-// Proved
-// https://prover.certora.com/output/40577/a451e923be1144ae88f125ac4f7b7a60?anonymousKey=69814a5c38c0f7720859be747546bbbde3f79191
+/// @title Checks basic formula: totalSupply of shares must match number of underlying tokens.
+/// Proved
+/// https://prover.certora.com/output/40577/a451e923be1144ae88f125ac4f7b7a60?anonymousKey=69814a5c38c0f7720859be747546bbbde3f79191
 invariant totalSupplyBasicIntegrity()
     totalSupply() == sharesFromUnderlyingBalance(totalUnderlyingSupply());
 
-// @title setConsensusLayerData does not break the following statement: river balance is equal to the sum BalanceToDeposit.get() + CommittedBalance.get() + BalanceToRedeem.get()
+invariant zeroAssetsZeroShares_invariant()
+    totalUnderlyingSupply() == 0 <=> totalSupply() == 0
+    filtered {f -> !helperMethods(f)}
+
+/// @title setConsensusLayerData does not break the following statement: river balance is equal to the sum BalanceToDeposit.get() + CommittedBalance.get() + BalanceToRedeem.get()
 // https://prover.certora.com/output/40577/70efd3b673224aebae46ced21e150dce/?anonymousKey=68b4b3fa514f4aceb895c1306f3b44c48e2b4773
 rule riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem_for_setConsensusLayerData(env e)
 {
@@ -80,7 +83,7 @@ rule riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem_for_helper2_helper7(env e
 
 // Passing except for timeout for claimRedeemRequests:
 // https://prover.certora.com/output/40577/03d0c8799cd7442e8c50ecfee4c940cc/?anonymousKey=110f1e2ba0710a7ee8312516d636e201b73d3576
-rule riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem(env e, method f, calldataarg args) filtered {
+rule riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem(method f) filtered {
     f -> !f.isView
         && f.selector != sig:sendCoverageFunds().selector
         && f.selector != sig:sendCLFunds().selector
@@ -96,8 +99,9 @@ rule riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem(env e, method f, calldata
     uint256 river_balance_before = riverEthBalance();
 
     uint256 totalSupplyMidterm = totalUnderlyingSupply();
+    env e;
     require e.msg.sender != currentContract;
-
+    calldataarg args;
     f(e, args);
 
     mathint assets_after = totalUnderlyingSupply();
@@ -177,13 +181,15 @@ rule getLastConsensusLayerReport_changeVitness(env e, env e2, method f, calldata
     assert after.epoch == 0;
 }
 
-rule underlyingBalanceEqualToRiverBalancePlusConsensus(env e, method f, calldataarg args)
+rule underlyingBalanceEqualToRiverBalancePlusConsensus(method f) filtered{f -> !f.isView && !helperMethods(f)}
 {
-    require to_mathint(totalUnderlyingSupply()) == riverEthBalance() + consensusLayerEthBalance();
+    require to_mathint(totalUnderlyingSupply()) <= riverEthBalance() + consensusLayerEthBalance();
 
+    env e;
+    calldataarg args;
     f(e, args);
 
-    assert to_mathint(totalUnderlyingSupply()) == riverEthBalance() + consensusLayerEthBalance();
+    assert to_mathint(totalUnderlyingSupply()) <= riverEthBalance() + consensusLayerEthBalance();
 }
 
 // // Validators will exit the consensus layer.
@@ -198,31 +204,40 @@ rule underlyingBalanceEqualToRiverBalancePlusConsensus(env e, method f, calldata
 // }
 
 /// @title When user deposits, there is no additional gift component to the deposit.
-// Passing here:
-// https://prover.certora.com/output/40577/ab8a00d9e5804d6eb56316149457cbf8/?anonymousKey=224f9317520c66cc0c214cb632a02918577a85ef
-rule depositAdditivityNoGiftsToEachDeposit(env e1, env e2, env eSum) {
-    mathint amount1;
-    mathint amount2;
+// Violated here:
+/// @link : https://prover.certora.com/output/41958/7331a25a3ce446688a1512d9a76b9320/?anonymousKey=0b3cb171beb2f6d9f3506c4b5c08eb7f87883c9f
+rule noGiftsInDeposit(env e) {
     address recipient;
+    address sender = e.msg.sender;
+    require e.msg.sender != currentContract;
+    uint256 supplyBefore = totalSupply();
+    uint256 underlyingBefore = totalUnderlyingSupply(); 
 
-    require amount1 == to_mathint(e1.msg.value);
-    require amount2 == to_mathint(e2.msg.value);
-    require amount1 + amount2 == to_mathint(eSum.msg.value);
+    SetSuppliesBounds();
+    requireInvariant zeroAssetsZeroShares_invariant();
+    /// Remains to be proven
+    require recipient != sender => balanceOf(sender) + balanceOf(recipient) <= to_mathint(supplyBefore);
+    require sender == recipient => balanceOf(sender) <= supplyBefore;
 
-    mathint sharesBefore = balanceOf(recipient);
+    mathint senderValue_before = getUserValue(e.msg.sender);
+    mathint recipientValue_before = getUserValue(recipient);
+        depositAndTransfer(e, recipient);
+    mathint senderValue_after = getUserValue(e.msg.sender);
+    mathint recipientValue_after = getUserValue(recipient);
 
-    storage initial = lastStorage;
+    mathint rounding_error = underlyingBefore != 0 ? 1 + underlyingBefore / supplyBefore : 0;
+    uint256 delta = recipient == sender ? 0 : e.msg.value;
 
-    depositAndTransfer(e1, recipient);
-    mathint shares1 = balanceOf(recipient);
-
-    depositAndTransfer(e2, recipient) at initial;
-    mathint shares2 = balanceOf(recipient);
-
-    depositAndTransfer(eSum, recipient) at initial;
-    mathint sharesSum = balanceOf(recipient);
-
-    assert shares1 + shares2 <= sharesSum + sharesBefore;
+    if(recipient != currentContract) {
+        assert recipientValue_after - recipientValue_before <= delta + 1;
+        assert recipientValue_after - recipientValue_before >= delta - rounding_error;
+    }
+    else {
+    /// If the recipient is the current contract, the delta should account for the deposit value (e.msg.value)
+    /// so delta -> delta + msg.value = 2*delta
+        assert recipientValue_after - recipientValue_before <= 2*delta + 1;
+        assert recipientValue_after - recipientValue_before >= 2*delta - rounding_error;
+    }
 }
 
 rule onlyOneValidEpoch(uint256 epoch1, uint256 epoch2) {

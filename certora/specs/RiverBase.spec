@@ -24,8 +24,6 @@ methods {
      // requestRedeem function is also defined in River:
     function _.requestRedeem(uint256 _lsETHAmount, address _recipient) external => DISPATCHER(true);
     function _.claimRedeemRequests(uint32[], uint32[], bool, uint16) external => DISPATCHER(true);
-    /// Need to verify again that this summary is sound (and over-approximate) with respect to the River.
-    function RedeemManagerV1._claimRedeemRequest(RedeemManagerV1.ClaimRedeemRequestParameters memory) internal => NONDET;
     function _.pullExceedingEth(uint256) external => DISPATCHER(true);
     function _.reportWithdraw(uint256) external => DISPATCHER(true);
     function _.getRedeemDemand() external => DISPATCHER(true);
@@ -70,14 +68,13 @@ methods {
     function _.pullCoverageFunds(uint256) external => DISPATCHER(true);
 
     // OperatorsRegistryV1
-    function _.reportStoppedValidatorCounts(uint32[], uint256) external => NONDET;
-    function _.getStoppedAndRequestedExitCounts() external => DISPATCHER(true);
-    function _.demandValidatorExits(uint256, uint256) external => DISPATCHER(true);
-    function _.pickNextValidatorsToDeposit(uint256) external => DISPATCHER(true); // has no effect - CERT-4615
+    //function _.reportStoppedValidatorCounts(uint32[], uint256) external => NONDET;
+    //function _.getStoppedAndRequestedExitCounts() external => DISPATCHER(true);
+    //function _.demandValidatorExits(uint256, uint256) external => DISPATCHER(true);
+    //function _.pickNextValidatorsToDeposit(uint256) external => DISPATCHER(true); // has no effect - CERT-4615
 
-    function _.deposit(bytes,bytes,bytes,bytes32) external => DISPATCHER(true); // has no effect - CERT-4615
+    //function _.deposit(bytes,bytes,bytes,bytes32) external => DISPATCHER(true); // has no effect - CERT-4615
 
-    // Workaround per CERT-4615
     function LibBytes.slice(bytes memory _bytes, uint256 _start, uint256 _length) internal returns (bytes memory) => bytesSliceSummary(_bytes, _start, _length);
 }
 
@@ -97,6 +94,12 @@ definition helperMethods(method f) returns bool =
 definition setConsensusMethod(method f) returns bool = 
     f.selector == sig:setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport).selector;
 
+/// Configurable bounds for the ETH supply and shares supply
+definition MINIMUM_ETH_SUPPLY() returns uint256 = 10^16;    /// = 0.01ETH
+definition MINIMUM_SHARES_SUPPLY() returns uint256 = 10^16;
+definition MAXIMUM_ETH_SUPPLY() returns uint256 = (1 << 128);   /// = 2^128 (more than available ETH in the world)
+definition MAXIMUM_SHARES_SUPPLY() returns uint256 = (1 << 128);
+
 ghost mapping(bytes32 => mapping(uint => bytes32)) sliceGhost;
 
 function bytesSliceSummary(bytes buffer, uint256 start, uint256 len) returns bytes {
@@ -108,10 +111,20 @@ function bytesSliceSummary(bytes buffer, uint256 start, uint256 len) returns byt
 	return to_ret;
 }
 
+function SetSuppliesBounds() {
+    uint256 totalETH = totalUnderlyingSupply();
+    uint256 supply = totalSupply();
+    if(supply != 0 && totalETH != 0) {
+        require supply >= MINIMUM_SHARES_SUPPLY();
+        require totalETH >= MINIMUM_ETH_SUPPLY();
+        require supply <= MAXIMUM_SHARES_SUPPLY();
+        require totalETH <= MAXIMUM_ETH_SUPPLY();
+    }
+}
+
 function getUserValue(address user) returns mathint {
     if(totalSupply() == 0) {
         return to_mathint(nativeBalances[user]);
     }
     return underlyingBalanceFromShares(balanceOf(user)) + nativeBalances[user];
 }
-

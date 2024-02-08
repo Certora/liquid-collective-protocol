@@ -53,9 +53,9 @@ rule mulDivMonotonicCheck(uint256 x, uint256 y, uint256 z) {
     uint256 xp; uint256 yp; uint256 zp;
     require zp !=0;
     uint256 result = require_uint256((x * y) / z);
-    uint256 resultp = require_uint256((x * y) / zp);
+    uint256 resultp = require_uint256((xp * yp) / zp);
 
-    assert x * y <= xp * yp  && z == zp => result <= resultp;
+    assert x * y <= xp * yp && z == zp => result <= resultp;
     assert x * y == xp * yp && z <= zp => result >= resultp;
 }
 
