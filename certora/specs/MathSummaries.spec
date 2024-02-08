@@ -75,7 +75,7 @@ The function forces the theoretical bound between the two scenarios on the summa
 function sharesAdditivityBound(uint256 amountX, uint256 amountY, uint256 shares, uint256 balance) {
     /// First step: Shares minted for (amountX) 
     uint256 dSx = balance == 0 ? amountX : _mulDivGhost[require_uint256(amountX * shares)][balance];
-    /// Update balance (+ amountX)
+    /// Update total underlying balance (+ amountX)
     uint256 balance_new = require_uint256(balance + amountX);
     /// Update total supply ( + dSx)
     uint256 shares_new = require_uint256(shares + dSx);
@@ -98,7 +98,7 @@ rule mulDivAdditivity(uint256 dx, uint256 dy) {
     require B !=0 <=> S != 0;
     /// First step: Shares minted for (dx) 
     uint256 dSx = B == 0 ? dx : require_uint256((dx * S) / B);
-    /// Update balance (+ dx)
+    /// Update total underlying balance (+ dx)
     uint256 B_new = require_uint256(B + dx);
     /// Update total supply ( + dSx)
     uint256 S_new = require_uint256(S + dSx);
@@ -116,4 +116,62 @@ rule mulDivAdditivity(uint256 dx, uint256 dy) {
 
     /// So the profit in shares is at most:
     /// 2 + (second amount + 1) / (initial balance + first amount)
+}
+
+/*
+A tailor-made function for the mulDivLIA summary that applies the change of value due to round-off
+errors when minting shares.
+Starting with a total supply of 'shares' and underlying balance 'balance',
+A user deposits 'amount' of ETH on behalf of some recipient for whom dS shares are being minted,
+so the share balance of the recipient increases by dS : sharesBalance += dS.
+
+Ideally, the change of value (in terms of ETH) for the recipient will be exactly 'amount',
+but the round-off errors introduce some small deviations.
+These deviations are implied in the requrie statement at the end.
+
+The function forces the theoretical bound on these deviations.
+*/
+function mintedSharesValueDelta(uint256 amount, uint256 sharesBalance, uint256 shares, uint256 balance) {
+    /// First step: Shares minted for (amount) 
+    uint256 dS = balance == 0 ? amount : _mulDivGhost[require_uint256(amount * shares)][balance];
+    /// Update total underlying balance (+ amount)
+    uint256 balance_new = require_uint256(balance + amount);
+    /// Update total supply ( + dS)
+    uint256 shares_new = require_uint256(shares + dS);
+    /// Update shares balance for recipient:
+    uint256 sharesBalance_new = require_uint256(sharesBalance + dS);
+
+    mathint old_value = shares == 0 ? 0 : _mulDivGhost[require_uint256(balance * sharesBalance)][shares];
+
+    mathint new_value = shares_new == 0 ? 0 : _mulDivGhost[require_uint256(balance_new * sharesBalance_new)][shares_new];
+
+    mathint rounding_error = balance != 0 ? 1 + balance / shares : 0;
+    
+    /// If the shares-balance sanity invariants hold, then the bounds are as follows:
+    require ( (shares == 0 <=> balance == 0) && sharesBalance <= shares ) =>
+        (new_value - old_value <= amount + 1 && new_value - old_value >= amount - rounding_error);
+}
+
+rule mulDivValueDelta(uint256 amount, uint256 sharesBalance, uint256 shares, uint256 balance) {
+    /// Apply the 'zero shares iff zero underlying assets' invariant:
+    require shares == 0 <=> balance == 0;
+    /// Apply the 'sum of all balances equals total supply' invariant:
+    require sharesBalance <= shares;
+    /// First step: Shares minted for (amount) 
+    uint256 dS = balance == 0 ? amount : require_uint256((amount * shares) / balance);
+    /// Update total underlying balance (+ amount)
+    uint256 balance_new = require_uint256(balance + amount);
+    /// Update total supply ( + dS)
+    uint256 shares_new = require_uint256(shares + dS);
+    /// Update shares balance for recipient:
+    uint256 sharesBalance_new = require_uint256(sharesBalance + dS);
+
+    mathint old_value = shares == 0 ? 0 : require_uint256((balance * sharesBalance) / shares);
+
+    mathint new_value = shares_new == 0 ? 0 : require_uint256((balance_new * sharesBalance_new) / shares_new);
+
+    mathint rounding_error = balance != 0 ? 1 + balance / shares : 0;
+    
+    assert new_value - old_value <= amount + 1;
+    assert new_value - old_value >= amount - rounding_error;
 }

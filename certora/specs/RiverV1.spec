@@ -3,13 +3,17 @@ import "MathSummaries.spec";
 import "RiverBase.spec";
 
 use rule method_reachability;
+use rule mulDivValueDelta;
+use rule mulDivLIACheck;
+use rule mulDivMonotonicCheck;
+use rule mulDivAdditivity;
 
 methods {
-    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivDownAbstractPlus(a, b, c);
+    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivLIA(a, b, c);
 }
 
 /// @title Checks basic formula: totalSupply of shares must match number of underlying tokens.
-/// Proved
+/// Proven
 /// https://prover.certora.com/output/40577/a451e923be1144ae88f125ac4f7b7a60?anonymousKey=69814a5c38c0f7720859be747546bbbde3f79191
 invariant totalSupplyBasicIntegrity()
     totalSupply() == sharesFromUnderlyingBalance(totalUnderlyingSupply());
@@ -204,8 +208,8 @@ rule underlyingBalanceEqualToRiverBalancePlusConsensus(method f) filtered{f -> !
 // }
 
 /// @title When user deposits, there is no additional gift component to the deposit.
-// Violated here:
-/// @link : https://prover.certora.com/output/41958/7331a25a3ce446688a1512d9a76b9320/?anonymousKey=0b3cb171beb2f6d9f3506c4b5c08eb7f87883c9f
+/// Proven:
+/// https://prover.certora.com/output/41958/587584c193fa4941ae1ee3b93babd240/?anonymousKey=d58d2abe2a4b1c37d8dfac67d3fcac94249e38d8
 rule noGiftsInDeposit(env e) {
     address recipient;
     address sender = e.msg.sender;
@@ -215,6 +219,7 @@ rule noGiftsInDeposit(env e) {
 
     SetSuppliesBounds();
     requireInvariant zeroAssetsZeroShares_invariant();
+    mintedSharesValueDelta(e.msg.value, balanceOf(recipient), supplyBefore, underlyingBefore);
     /// Remains to be proven
     require recipient != sender => balanceOf(sender) + balanceOf(recipient) <= to_mathint(supplyBefore);
     require sender == recipient => balanceOf(sender) <= supplyBefore;
