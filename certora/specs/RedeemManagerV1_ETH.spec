@@ -9,6 +9,7 @@ methods {
     function river.totalShares() external returns (uint256) envfree;
     function river.assetBalance() external returns (uint256) envfree;
     function river.sharesPerOwner(address) external returns (uint256) envfree;
+    function river.underlyingBalanceFromShares(uint256) external returns (uint256) envfree;
 
     function _.sendRedeemManagerExceedingFunds() external => DISPATCHER(true);
     function _.underlyingBalanceFromShares(uint256 _shares) external => DISPATCHER(true);

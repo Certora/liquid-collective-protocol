@@ -407,31 +407,121 @@ leads to a change in (theoretical) share price that is bounded below by:
 */
 
 rule sharePriceIsStable_revised(method f) filtered{f -> !f.isView && !helperMethods(f)} {
-    uint256 totalLsETHBefore = totalSupply();
-    uint256 totalETHBefore = totalUnderlyingSupply();
-    mathint rateBefore = mulDivDownAbstractPlus(totalETHBefore, 1, totalLsETHBefore);
-
     requireInvariant zeroAssetsZeroShares_invariant();
     SetSuppliesBounds();
     env e;
     calldataarg args;
     require e.msg.sender != currentContract;
-    f(e, args);
 
-    uint256 totalLsETHAfter = totalSupply();
-    uint256 totalETHAfter = totalUnderlyingSupply();
-    mathint rateAfter = mulDivDownAbstractPlus(totalETHAfter, 1, totalLsETHAfter);
+    mathint rateBefore = mulDivDownAbstractPlus(totalUnderlyingSupply(), 1, totalSupply());
+        f(e, args);
+    mathint rateAfter = mulDivDownAbstractPlus(totalUnderlyingSupply(), 1, totalSupply());
 
     assert abs(rateBefore - rateAfter) <= 2;
 }
 
+rule totalSupplyAndSumOfBalancesArePreserved(address userA, address userB, method f) filtered{f -> 
+    f.selector == sig:transfer(address,uint256).selector ||
+    f.selector == sig:transferFrom(address,address,uint256).selector ||
+    f.selector == sig:requestRedeem(uint256,address).selector} 
+{
+    env e;
+    uint256 amount;
+    uint256 balanceA_before = balanceOf(userA);
+    uint256 balanceB_before = balanceOf(userB);
+    uint256 supply_before = totalSupply();
+
+    if(f.selector == sig:transfer(address,uint256).selector) {
+        require userA == e.msg.sender;
+        transfer(e, userB, amount);
+    }
+    else if(f.selector == sig:transferFrom(address,address,uint256).selector) {
+        transferFrom(e, userA, userB, amount);
+    }
+    else {
+        address recipient;
+        require userA == e.msg.sender;
+        require userB == RM;
+        requestRedeem(e, amount, recipient);
+    }
+
+    uint256 balanceA_after = balanceOf(userA);
+    uint256 balanceB_after = balanceOf(userB);
+    uint256 supply_after = totalSupply();
+
+    assert balanceA_after + balanceB_after == balanceA_before + balanceB_before;
+    assert supply_before == supply_after;
+}
+
+/// @title The share balance of any user is never larger than the total supply.
+/// @notice Essentially, it's necessary to assume that the sum of all balances is smaller than the total supply.
+invariant BalanceIsLessThanSupply(address user)
+    balanceOf(user) <= totalSupply()
+    filtered{f -> !setConsensusMethod(f)}
+    {
+        preserved transfer(address to, uint256 amount) with (env e) {
+            require to != e.msg.sender => balanceOf(to) + balanceOf(e.msg.sender) <= to_mathint(totalSupply());
+        }
+        preserved transferFrom(address from, address to, uint256 amount) with (env e) {
+            require to != from => balanceOf(to) + balanceOf(from) <= to_mathint(totalSupply());
+        }
+        preserved requestRedeem(uint256 amount, address to) with (env e) {
+            require e.msg.sender != RM => balanceOf(e.msg.sender) + balanceOf(RM) <= to_mathint(totalSupply());
+        }
+        preserved with (env e) {
+            require user != e.msg.sender => balanceOf(e.msg.sender) + balanceOf(user) <= to_mathint(totalSupply());
+            require user != RM => balanceOf(RM) + balanceOf(user) <= to_mathint(totalSupply());
+            require user != currentContract => balanceOf(currentContract) + balanceOf(user) <= to_mathint(totalSupply());
+            require e.msg.sender != RM => balanceOf(e.msg.sender) + balanceOf(RM) <= to_mathint(totalSupply());
+        }
+    }
+    
+/// @title Shares transfer doesn't increase assets value
+rule transferDoesntIncreaseValue(address userA, address userB, method f) filtered{f -> 
+    f.selector == sig:transfer(address,uint256).selector ||
+    f.selector == sig:transferFrom(address,address,uint256).selector ||
+    f.selector == sig:requestRedeem(uint256,address).selector} 
+{
+    env e;
+    calldataarg arg;
+    
+    mathint valueA_before = getUserValue(userA);
+    mathint valueB_before = getUserValue(userB);
+
+    uint256 amount;
+    if(f.selector == sig:transfer(address,uint256).selector) {
+        require userA == e.msg.sender;
+        transfer(e, userB, amount);
+    }
+    else if(f.selector == sig:transferFrom(address,address,uint256).selector) {
+        transferFrom(e, userA, userB, amount);
+    }
+    else {
+        address recipient;
+        require userA == e.msg.sender;
+        require userB == RM;
+        requestRedeem(e, amount, recipient);
+    }
+
+    mathint valueA_after = getUserValue(userA);
+    mathint valueB_after = getUserValue(userB);
+
+    assert valueA_after + valueB_after <= valueA_before + valueB_before + 1;
+}
+
 /// @title A user cannot increase the value of his own assets.
-rule userCannotIncreaseOwnAssetsValue(method f) filtered{f -> !f.isView && !setConsensusMethod(f)} {
+rule userCannotIncreaseOwnAssetsValue(method f) filtered{f -> !f.isView && !helperMethods(f) &&
+/// claimRedeemRequests always gives value "for free" for the recipient.
+f.selector != sig:claimRedeemRequests(uint32[],uint32[]).selector &&
+/// Allowance breaks this property. We prove instead that the total value is preserved in another rule.
+f.selector != sig:transferFrom(address,address,uint256).selector} 
+{
     env e;
     address user = e.msg.sender;
-    require user != currentContract; /// User is not River.
-    require user != RM; /// User is not Redeem Manager.
 
+    requireInvariant zeroAssetsZeroShares_invariant();
+    requireInvariant BalanceIsLessThanSupply(user);
+    require userIsNotAContract(user);
     SetSuppliesBounds();
     
     mathint value_before = getUserValue(user);
@@ -439,7 +529,7 @@ rule userCannotIncreaseOwnAssetsValue(method f) filtered{f -> !f.isView && !setC
         f(e, args);
     mathint value_after = getUserValue(user);
 
-    assert value_before >= value_after;
+    assert value_after - value_before <= 1;
 }
 
 /// @title The assets of a black-listed user are immutable.

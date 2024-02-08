@@ -122,6 +122,16 @@ function SetSuppliesBounds() {
     }
 }
 
+function userIsNotAContract(address user) returns bool {
+    return 
+    user != AL &&
+    user != CF &&
+    user != ELFR &&
+    user != RM &&
+    user != Wd &&
+    user != River;
+}
+
 function getUserValue(address user) returns mathint {
     if(totalSupply() == 0) {
         return to_mathint(nativeBalances[user]);
