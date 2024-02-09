@@ -74,7 +74,7 @@ filtered { f -> f.selector != sig:removeValidators(uint256,uint256[]).selector }
 // TODO -------- INVARIANT --------
 
 invariant inactiveOperatorsRemainNotFunded(uint opIndex) 
-    opIndex < 3 => (!getOperator(opIndex).active => getOperator(opIndex).funded == 0)
+    getOperatorsCount() < 3 => (!getOperator(opIndex).active => getOperator(opIndex).funded == 0)
     { 
         preserved requestValidatorExits(uint256 x) with(env e) { require x <= 2; }
         preserved pickNextValidatorsToDeposit(uint256 x) with(env e) { require x <= 1; }  
