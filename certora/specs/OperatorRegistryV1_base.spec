@@ -35,7 +35,6 @@ methods {
     function OR.getOperatorsSaturationDiscrepancy(uint256, uint256) external returns (uint256) envfree;
     function OR.removeValidators(uint256,uint256[]) external envfree;
 
-    //workaroun per CERT-4615 
     function LibBytes.slice(bytes memory _bytes, uint256 _start, uint256 _length) internal returns (bytes memory) => bytesSliceSummary(_bytes, _start, _length);
 
 }
@@ -57,12 +56,7 @@ definition needsLoopIter4(method f) returns bool =
     f.selector == sig:addValidators(uint256,uint32,bytes).selector ||
     f.selector == sig:reportStoppedValidatorCounts(uint32[],uint256).selector;
 
-function isValidState() returns bool
-{
-    uint opCount = getOperatorsCount();
-    //uint stoppedValLength = getStoppedValidatorsLength();
-    return getOperatorsCount() <= 2;// && opCount == stoppedValLength;
-}
+
 function isOpIndexInBounds(uint opIndex) returns bool
 {
     return opIndex < getOperatorsCount();
@@ -71,7 +65,6 @@ function isValIndexInBounds(uint opIndex, uint valIndex) returns bool
 {
     return isOpIndexInBounds(opIndex) && valIndex < getKeysCount(opIndex);
 }
-
 
 definition isMethodID(method f, uint ID) returns bool =
     (f.selector == sig:acceptAdmin().selector && ID == 1) ||
