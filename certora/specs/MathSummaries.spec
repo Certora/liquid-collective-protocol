@@ -175,3 +175,72 @@ rule mulDivValueDelta(uint256 amount, uint256 sharesBalance, uint256 shares, uin
     assert new_value - old_value <= amount + 1;
     assert new_value - old_value >= amount - rounding_error;
 }
+
+function burnSharePriceDelta_shares(uint256 amount, uint256 shares, uint256 balance) {
+    /// First step: Amount redeemed for shares
+    uint256 dx = _mulDivGhost[require_uint256(amount * balance)][shares];
+    /// Update total underlying balance (- dx)
+    uint256 balance_new = require_uint256(balance - dx);
+    /// Update total supply ( - amount)
+    uint256 shares_new = require_uint256(shares - amount);
+
+    mathint old_value = _mulDivGhost[balance][shares];
+
+    mathint new_value = shares_new == 0 ? 0 : _mulDivGhost[balance_new][shares_new];
+
+    require ((shares_new !=0) && (shares != 0 && balance != 0)) => abs(new_value - old_value) <= 2;
+}
+
+rule mulDivBurnSharePriceDelta_shares(uint256 amount, uint256 shares, uint256 balance) {
+    /// Apply the 'zero shares iff zero underlying assets' invariant:
+    require shares != 0 && balance != 0;
+    /// First step: Amount redeemed for shares
+    uint256 dx = require_uint256(amount * balance / shares);
+    /// Update total underlying balance (- dx)
+    uint256 balance_new = require_uint256(balance - dx);
+    /// Update total supply ( - amount)
+    uint256 shares_new = require_uint256(shares - amount);
+
+    mathint old_value = balance / shares;
+
+    mathint new_value = shares_new == 0 ? 0 : balance_new / shares_new;
+
+    assert (shares_new !=0) => abs(new_value - old_value) <= 2;
+}
+
+function burnSharePriceDelta_underlying(uint256 amount, uint256 shares, uint256 balance) {
+    /// First step: Shares burned for ETH (amount) 
+    uint256 dS = _mulDivGhost[require_uint256(amount * shares)][balance];
+    /// Update total underlying balance (- amount)
+    uint256 balance_new = require_uint256(balance - amount);
+    /// Update total supply ( - dS)
+    uint256 shares_new = require_uint256(shares - dS);
+
+    mathint old_value = _mulDivGhost[balance][shares];
+
+    mathint new_value = shares_new == 0 ? 0 : _mulDivGhost[balance_new][shares_new];
+
+    mathint rounding_error = balance_new != 0 ? old_value * old_value / balance_new + 1 : 0;
+
+    require (shares != 0 && balance != 0 && shares_new != 0) => 
+        (new_value - old_value <= 1 && old_value - new_value <= rounding_error);
+}
+
+rule mulDivBurnSharePriceDelta_underlying(uint256 amount, uint256 shares, uint256 balance) {
+    /// Apply the 'zero shares iff zero underlying assets' invariant:
+    require shares != 0 && balance != 0;
+    /// First step: Shares minted for (amount) 
+    uint256 dS = require_uint256((amount * shares) / balance);
+    /// Update total underlying balance (+ amount)
+    uint256 balance_new = require_uint256(balance - amount);
+    /// Update total supply ( + dS)
+    uint256 shares_new = require_uint256(shares - dS);
+
+    mathint old_value = shares == 0 ? 0 : balance / shares;
+
+    mathint new_value = shares_new == 0 ? 0 : balance_new / shares_new;
+
+    mathint rounding_error = balance_new != 0 ?  old_value * old_value / balance_new + 1 : 0;
+    
+    assert shares_new != 0 => (new_value - old_value <= 1 && old_value - new_value <= rounding_error);
+}

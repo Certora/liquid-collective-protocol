@@ -17,8 +17,8 @@ methods {
     function _.isDenied(address) external => DISPATCHER(true);
 
     // RedeemManagerV1
-    function RedeemManagerV1Harness.resolveRedeemRequests(uint32[]) external returns(int64[]) envfree;
-    function RedeemManagerV1Harness.getRedeemDemand() external returns (uint256) envfree;
+    function RM.resolveRedeemRequests(uint32[]) external returns(int64[]) envfree;
+    function RM.getRedeemDemand() external returns (uint256) envfree;
     function _.resolveRedeemRequests(uint32[]) external => NONDET;
     
      // requestRedeem function is also defined in River:
@@ -137,4 +137,8 @@ function getUserValue(address user) returns mathint {
         return to_mathint(nativeBalances[user]);
     }
     return underlyingBalanceFromShares(balanceOf(user)) + nativeBalances[user];
+}
+
+function getSharePrice() returns uint256 {
+    return underlyingBalanceFromShares(1);
 }
