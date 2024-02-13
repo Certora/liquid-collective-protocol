@@ -17,9 +17,12 @@ methods {
     function reportConsensusLayerData(IOracleManagerV1.ConsensusLayerReport) external;
 
     /// IOracleManager
-    function _.setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport report) external => setEpochCVL(report.epoch) expect void;
+    function _.setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport report) external with (env e) => setEpochCVL(report.epoch, e) expect void;
     function _.isValidEpoch(uint256 epoch) external with (env e) => isValidEpochCVL(epoch, e.block.timestamp) expect bool;
 }
+
+/// Link:
+/// https://prover.certora.com/output/41958/41eb4e27823049f4ba1e37c1c50468d2/?anonymousKey=976deb7f7709c7b70546591e145039b7b65604cd
 
 /*
 ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -83,9 +86,10 @@ function RequireNoDuplicatesForAddress(address account) {
 
 function RequireNoDuplicatesForAddressPair(address account1, address account2) {
     uint256 index1; uint256 index2; 
+    requireInvariant ZeroAddressIsNotAMember();
     /// Tag 'index' to be the index of 'account':
-    require account1 != ZERO_ADDRESS() => getMemberAtIndex(index1) == account1;
-    require account2 != ZERO_ADDRESS() => getMemberAtIndex(index2) == account2;
+    require isMember(account1) => getMemberAtIndex(index1) == account1;
+    require isMember(account2) => getMemberAtIndex(index2) == account2;
     requireInvariant NoMembersDuplicates(index1, index2);
 }
 
@@ -95,18 +99,35 @@ function RequireNoDuplicatesForAddressPair(address account1, address account2) {
 └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 */
 /// Mock for OracleManager.LastConsensusLayerReport.get().epoch
-ghost uint256 lastConsensusEpoch;
+ghost uint256 lastConsensusEpoch {
+    init_state axiom lastConsensusEpoch == 0;
+}
+
+/// Track the last timestamp in which the consensus report was submitted.
+ghost uint256 lastConsensusTimestamp {
+    init_state axiom lastConsensusTimestamp == 0;
+}
 
 /// Mock a part of OracleManager._isValidEpoch()
-ghost _validEpochTime(uint256,uint256) returns bool;
+ghost _validEpochTime(uint256,uint256) returns bool {
+    /// We assume that for every timestamp there exists only one valid epoch.
+    /// That assumption strongly depends on the CLSpec of the River contract (e.g. the epochs per frame, the slots per epoch).
+    /// If the oracle report is submitted every 24h, and the epochs per frame = 225, this condition is satisfied.
+    axiom forall uint256 timestamp. forall uint256 epoch1. forall uint256 epoch2.
+        (_validEpochTime(epoch1, timestamp) && _validEpochTime(epoch2, timestamp)) => epoch1 == epoch2;
+    /// Epoch = 0 is not a valid epoch
+    axiom forall uint256 timestamp. !_validEpochTime(0, timestamp);
+}
 
 function isValidEpochCVL(uint256 epoch, uint256 timestamp) returns bool {
     return _validEpochTime(epoch, timestamp) && epoch > lastConsensusEpoch;
 }
 
 /// Upon a call to setConsensusLayerData() the stored consensus report epoch is updated accordingly.
-function setEpochCVL(uint256 epoch) {
+function setEpochCVL(uint256 epoch, env e) {
+    require isValidEpochCVL(epoch, e.block.timestamp);
     lastConsensusEpoch = epoch;
+    lastConsensusTimestamp = e.block.timestamp;
 }
 
 /*
@@ -204,11 +225,22 @@ invariant NoMembersDuplicates(uint256 index1, uint256 index2)
         preserved {
             uint256 numberOfMembers = getNumberOfMembers();
             require numberOfMembers < max_uint;
-            if(numberOfMembers !=0 ) {
-                requireInvariant NoMembersDuplicates(index1, assert_uint256(numberOfMembers-1));
-                requireInvariant NoMembersDuplicates(index2, assert_uint256(numberOfMembers-1));
-            }   
+            uint256 lastIndex = numberOfMembers == 0 ? 0 : assert_uint256(numberOfMembers-1);
+            requireInvariant NoMembersDuplicates(index1, lastIndex);
+            requireInvariant NoMembersDuplicates(index2, lastIndex);
         }
+    }
+
+/// @title lastReportedEpoch must be larger than the last consensus epoch.
+invariant LastReportedEpochIsValid()
+    lastConsensusTimestamp !=0 => (
+        isValidEpochCVL(lastConsensusEpoch, lastConsensusTimestamp) &&
+        getLastReportedEpochId() > lastConsensusEpoch
+    )
+    &&
+    lastConsensusTimestamp ==0 <=> lastConsensusEpoch == 0
+    {
+        preserved with (env e) {require e.block.timestamp !=0;}
     }
     
 /// @title The setMember() function:
@@ -369,12 +401,14 @@ rule whichMethodsClearVariants(method f) filtered{f -> !f.isView && !initializeM
     assert getReportVariantsCount() == 0 => senderIsAdminOrMember;
 }
 
+/// @title An oracle cannot submit reports in the same epoch (timestamp).
 rule oracleCannotSubmitTwoReportsInTheSameEpoch() {
     IOracleManagerV1.ConsensusLayerReport reportA;
     IOracleManagerV1.ConsensusLayerReport reportB;
     uint256 lastEpoch = getLastReportedEpochId();
     env eA;
     env eB;
+    requireInvariant LastReportedEpochIsValid();
     require eA.msg.sender == eB.msg.sender;
     reportConsensusLayerData(eA, reportA);
     reportConsensusLayerData@withrevert(eB, reportB);
@@ -407,22 +441,47 @@ rule cannotFrontRunSameReportSubmission(IOracleManagerV1.ConsensusLayerReport re
     reportConsensusLayerData(e2, report) at initState;
     reportConsensusLayerData@withrevert(e1, report);
 
-    assert e1.msg.sender != e2.msg.sender => !lastReverted;
+    assert e1.msg.sender != e2.msg.sender <=> !lastReverted;
 }
 
 /// @title Correctness of reportConsensusLayerData():
-rule reportSubmissionIntegrity() {
+/// If the member has voted before, it can only vote again for a later epoch than the one which was last submitted.
+rule reportSubmissionIntegrity1() {
     env e;
     IOracleManagerV1.ConsensusLayerReport report;
+    uint256 lastConsensus_before = lastConsensusEpoch;
+    uint256 lastSubmittedEpoch = getLastReportedEpochId();
     requireInvariant ZeroAddressIsNotAMember();
     RequireNoDuplicatesForAddress(e.msg.sender);
+    requireInvariant LastReportedEpochIsValid();
     requireInvariant QuorumBounds();
+    /// Safe assumption
+    require e.block.timestamp >= lastConsensusTimestamp;
 
     bool status_before = getMemberReportStatus(e.msg.sender);
         reportConsensusLayerData@withrevert(e, report);
         bool reverted = lastReverted;
     bool status_after = getMemberReportStatus(e.msg.sender);
+    uint256 lastConsensus_after = lastConsensusEpoch;
 
-    assert status_before => reverted;
-    assert !reverted => status_after;
+    assert status_before => (reverted || report.epoch > lastSubmittedEpoch);
+}
+
+/// @title Correctness of reportConsensusLayerData():
+/// After the function call, the member status must be true, or result in the report being submitted to the river.
+rule reportSubmissionIntegrity2() {
+    env e;
+    IOracleManagerV1.ConsensusLayerReport report;
+    uint256 lastConsensus_before = lastConsensusEpoch;
+    requireInvariant ZeroAddressIsNotAMember();
+    RequireNoDuplicatesForAddress(e.msg.sender);
+    requireInvariant LastReportedEpochIsValid();
+    requireInvariant QuorumBounds();
+    /// Safe assumption
+    require e.block.timestamp >= lastConsensusTimestamp;
+
+    reportConsensusLayerData(e, report);
+    uint256 lastConsensus_after = lastConsensusEpoch;
+
+    assert getMemberReportStatus(e.msg.sender) || lastConsensus_before != lastConsensus_after;
 }
