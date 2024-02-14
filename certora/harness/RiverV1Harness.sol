@@ -18,9 +18,9 @@ contract RiverV1Harness is RiverV1 {
         uint256 clValidatorCount = storedReport.validatorsCount;
         uint256 depositedValidatorCount = DepositedValidatorCount.get();
 
-        if (depositedValidatorCount == clValidatorCount) return 0;
+        if (depositedValidatorCount <= clValidatorCount) return 0;
         uint256 depositSize = ConsensusLayerDepositManagerV1.DEPOSIT_SIZE;
-        return (clValidatorCount - depositedValidatorCount) * depositSize;
+        return (depositedValidatorCount - clValidatorCount) * depositSize;
     }
 
     /// @inheritdoc IOracleManagerV1

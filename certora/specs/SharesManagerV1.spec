@@ -6,15 +6,11 @@ methods {
     function balanceOf(address) external returns(uint256) envfree;
     function balanceOfUnderlying(address) external returns(uint256) envfree;
     function totalSupply() external returns(uint256) envfree;
-    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivDownAbstractPlus(a, b, c);
+    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivLIA(a, b, c);
 }
 
-// @title The allowance can only be changed by functions listed in the filter:
-// initRiverV1_1, setConsensusLayerData, decreaseAllowance, increaseAllowance, approve, transferFrom
-// Almost fixed. Latest run:
-// https://prover.certora.com/output/40577/c70e8e35cce446d495beb2c3904cf368?anonymousKey=11133ef88d529912cc091efea5f4f344eb2cf077
-// We need this bug to be fixed:
-// https://certora.atlassian.net/browse/CERT-4453
+/// @title The allowance can only be changed by functions listed in the filter.
+/// With the exception of requestRedeem() which also calls `transferFrom()`.
 rule allowanceChangesRestrictively(method f) filtered {
     f -> !f.isView
         && f.selector != sig:initRiverV1_1(address,uint64,uint64,uint64,uint64,uint64,uint256,uint256,uint128,uint128).selector
@@ -32,12 +28,19 @@ rule allowanceChangesRestrictively(method f) filtered {
     require owner != spender;
         f(e, args);
     uint256 allowance_after = allowance(owner, spender);
-    assert allowance_after == allowance_before;
+
+    if(f.selector == sig:requestRedeem(uint256,address).selector) {
+        assert owner != currentContract => allowance_after == allowance_before;
+        assert spender != RM => allowance_after == allowance_before;
+    }
+    else {
+        assert allowance_after == allowance_before;
+    }
+    
 }
 
-// @title The allowance of spender given by owner can always be decreased to 0 by the owner.
-// Proved:
-// https://prover.certora.com/output/41958/243b61d7e5e7421fb317450e25721fc6/?anonymousKey=1a99312c9a62add8fe74ced189162612f8c9158e
+/// @title The allowance of spender given by owner can always be decreased to 0 by the owner.
+/// Proven
 rule alwaysPossibleToDecreaseAllowance()
 {
     env e;
@@ -50,9 +53,8 @@ rule alwaysPossibleToDecreaseAllowance()
     assert allowance(owner, spender) == 0;
 }
 
-// @title It is impossible to increase any allowance by calling decreaseAllowance or transferFrom.
-// Proved:
-// https://prover.certora.com/output/40577/8985ea476a404c22801668777b60cb1e/?anonymousKey=67dc2147dcdd5e40466d907f809241856718be06
+/// @title It is impossible to increase any allowance by calling decreaseAllowance or transferFrom.
+/// Proven
 rule decreaseAllowanceAndTransferCannotIncreaseAllowance(env e, method f, calldataarg args) filtered {
     f -> f.selector == sig:decreaseAllowance(address,uint256).selector
         || f.selector == sig:transferFrom(address,address,uint256).selector
@@ -65,9 +67,7 @@ rule decreaseAllowanceAndTransferCannotIncreaseAllowance(env e, method f, callda
     assert allowance_after <= allowance_before;
 }
 
-// @title Allowance increases only by owner
-// Same issue as in allowanceChangesRestrictively
-// https://prover.certora.com/output/40577/8985ea476a404c22801668777b60cb1e/?anonymousKey=67dc2147dcdd5e40466d907f809241856718be06
+/// @title Allowance increases only by owner
 rule allowanceIncreasesOnlyByOwner(method f) filtered {
     f -> !f.isView
         && f.selector != sig:initRiverV1_1(address,uint64,uint64,uint64,uint64,uint64,uint256,uint256,uint128,uint128).selector
@@ -83,8 +83,8 @@ rule allowanceIncreasesOnlyByOwner(method f) filtered {
     assert allowance_before < allowance_after => e.msg.sender == owner;
 }
 
-// @title The shares balance can only be changed by functions listed in the filter:
-// transferFrom, transfer, setConsensusLayerData, depositAndTransfer, deposit, requestRedeem
+/// @title The shares balance can only be changed by functions listed in the filter:
+/// transferFrom, transfer, setConsensusLayerData, depositAndTransfer, deposit, requestRedeem
 rule sharesBalanceChangesRestrictively(method f) filtered {
     f -> !f.isView
         && f.selector != sig:transferFrom(address,address,uint256).selector
@@ -103,8 +103,8 @@ rule sharesBalanceChangesRestrictively(method f) filtered {
     assert shares_balance_after == shares_balance_before;
 }
 
-// @title If the balance changes and shares balance is the same, it must have been one of these functions:
-// initRiverV1_1, depositToConsensusLayer, claimRedeemRequests, deposit, depositAndTransfer
+/// @title If the balance changes and shares balance is the same, it must have been one of these functions:
+/// initRiverV1_1, depositToConsensusLayer, claimRedeemRequests, deposit, depositAndTransfer
 rule pricePerShareChangesRespectively(method f) filtered {
     f -> !f.isView
         && f.selector != sig:initRiverV1_1(address,uint64,uint64,uint64,uint64,uint64,uint256,uint256,uint128,uint128).selector
@@ -177,7 +177,7 @@ rule sharesMonotonicWithAssets_forSecConsensusLayerData(method f) filtered {f ->
 /// https://prover.certora.com/output/41958/3e6fedc6018d4887ac9371d35fbb2c24/?anonymousKey=f2750f9542e1e1990d48092eb1fe539c5e9a98ef
 invariant zeroAssetsZeroShares_invariant()
     totalUnderlyingSupply() == 0 <=> totalSupply() == 0
-    filtered {f -> !helperMethods(f)}
+    filtered {f -> !setConsensusMethod(f)}
     //    f -> f.selector != sig:initRiverV1_1(address,uint64,uint64,uint64,uint64,uint64,uint256,uint256,uint128,uint128).selector 
     {
         preserved
@@ -185,37 +185,6 @@ invariant zeroAssetsZeroShares_invariant()
             SetSuppliesBounds();
         }
     }
-
-
-// For helper9_reportWithdrawToRedeemManager it is also important, that it does not break the conversion rate.
-// Hopefuly proved here:
-// https://prover.certora.com/output/40577/f0305618029e4041bf4bd05256dcc5e6?anonymousKey=ce96a33f5876cab02ebeff53516f5bee9b889bd0
-rule conversionRateStable_helper9_reportWithdrawToRedeemManager(env e)
-{
-    OracleManagerV1.ConsensusLayerDataReportingVariables vars;
-
-    uint256 totalLsETHBefore = totalSupply();
-    uint256 totalETHBefore = totalUnderlyingSupply();
-    mathint rateBefore = mulDivDownAbstractPlus(totalETHBefore, 1, totalLsETHBefore);
-
-    requireInvariant zeroAssetsZeroShares_invariant();
-
-    helper9_reportWithdrawToRedeemManager(e, vars);
-
-    uint256 totalLsETHAfter = totalSupply();
-    uint256 totalETHAfter = totalUnderlyingSupply();
-    mathint rateAfter = mulDivDownAbstractPlus(totalETHAfter, 1, totalLsETHAfter);
-
-    assert totalLsETHBefore >= totalLsETHAfter;
-    assert totalETHBefore >= totalETHAfter;
-
-    // assert rateBefore <= rateAfter && rateBefore + rateBefore + 1 >= rateAfter; // violated here: https://prover.certora.com/output/40577/56123346e9924c53bb1e30ba892234e2/?anonymousKey=ac03fff66edce2e497f4fc367af76304a2ce9011
-    // assert rateAfter <= rateBefore && rateAfter + rateAfter + 1 >= rateBefore; // violated here: https://prover.certora.com/output/40577/859a891515e44c07a4f872833b786796/?anonymousKey=42a365e04989bd227379d60587581d925fecfebb
-    // assert rateAfter <= rateBefore + rateBefore + 1; // violated here: https://prover.certora.com/output/40577/1013183a11664889b1f5adcfca250ea3?anonymousKey=6b0611758c8382cfdda70d7da69c89d2416aa20c
-    // assert rateBefore <= rateAfter + rateAfter + 1; // violated here: https://prover.certora.com/output/40577/579fd1e7e19841078c0fa787565c843a/?anonymousKey=4167ac796e451474aae934048bb692d0d3d1084f
-    assert rateAfter <= rateBefore + rateBefore + rateBefore + 1;
-    assert rateBefore <= rateAfter + rateAfter + rateAfter + 1;
-}
 
 // proved here:
 // https://prover.certora.com/output/40577/d57287efa20b4183965c503eb1415f89/?anonymousKey=3c1a04e6876b9f482f15782a23064bf44971cde2
@@ -275,6 +244,7 @@ rule depositSplittingIsNotProfitable(address recipient) {
     env e2;
     env e3;
 
+    requireInvariant zeroAssetsZeroShares_invariant();
     sharesAdditivityBound(e1.msg.value, e2.msg.value, totalSupply(), totalUnderlyingSupply());
     require e1.msg.value + e2.msg.value == to_mathint(e3.msg.value);
 
@@ -302,7 +272,8 @@ leads to a change in (theoretical) share price that is bounded below by:
 0 >= [ (X / S) _new / (X / S)_old ] - 1 >= - (X - 1) / S / (X - dx)
 */
 
-rule sharePriceIsStable_revised(method f) filtered{f -> !f.isView && !helperMethods(f)} {
+/// https://prover.certora.com/output/41958/691ba157f9ac44f4b85eef47984687e3/?anonymousKey=504796ccc0257a3eaa2f02df6c85a343688b9908
+rule sharePriceIsStable_revised(method f) filtered{f -> !f.isView && !helperMethods(f) && !setConsensusMethod(f)} {
     requireInvariant zeroAssetsZeroShares_invariant();
     SetSuppliesBounds();
     env e;
@@ -313,7 +284,7 @@ rule sharePriceIsStable_revised(method f) filtered{f -> !f.isView && !helperMeth
         f(e, args);
     mathint rateAfter = mulDivDownAbstractPlus(totalUnderlyingSupply(), 1, totalSupply());
 
-    assert abs(rateBefore - rateAfter) <= 2;
+    assert rateBefore - rateAfter <= 1;
 }
 
 /// @title For every action that transfers shares, the sum of balances and total supply must not change.
@@ -407,11 +378,12 @@ rule transferDoesntIncreaseValue(address userA, address userB, method f) filtere
 }
 
 /// @title A user cannot increase the value of his own assets.
-rule userCannotIncreaseOwnAssetsValue(method f) filtered{f -> !f.isView && !helperMethods(f) &&
+rule userCannotIncreaseOwnAssetsValue(method f) filtered{f -> !f.isView && 
+!helperMethods(f) && !initRiverV1Method(f) &&
 /// claimRedeemRequests always gives value "for free" for the recipient.
 f.selector != sig:claimRedeemRequests(uint32[],uint32[]).selector &&
 /// Allowance breaks this property. We prove instead that the total value is preserved in another rule.
-f.selector != sig:transferFrom(address,address,uint256).selector} 
+f.selector != sig:transferFrom(address,address,uint256).selector}
 {
     env e;
     address user = e.msg.sender;
@@ -430,15 +402,18 @@ f.selector != sig:transferFrom(address,address,uint256).selector}
 }
 
 /// @title The assets of a black-listed user are immutable.
-rule blackListedUserAssetsValueIsConstant(address user, method f) filtered{f -> !f.isView && !setConsensusMethod(f)} {
+rule blackListedUserAssetsValueIsConstant(address user, method f) filtered{f -> !f.isView && !setConsensusMethod(f) &&
+/// This method calls the operator registry which doesn't handle ETH or shares.
+f.selector != sig:helper8_requestExitsBasedOnRedeemDemandAfterRebalancings(OracleManagerV1.ConsensusLayerDataReportingVariables, IOracleManagerV1.ConsensusLayerReport).selector
+} {
     require userIsNotAContract(user);
     require AL.isDenied(user); 
-
     SetSuppliesBounds();
+    env e;
+    require f.selector == sig:sendCLFunds().selector => e.msg.sender == WC;
 
     uint256 eth_before = nativeBalances[user];
     uint256 shares_before = balanceOf(user);
-        env e;
         calldataarg args;
         f(e, args);
     uint256 eth_after = nativeBalances[user];

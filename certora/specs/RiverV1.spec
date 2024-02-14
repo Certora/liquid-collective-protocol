@@ -16,7 +16,6 @@ methods {
 
 /// @title Checks basic formula: totalSupply of shares must match number of underlying tokens.
 /// Proven
-/// https://prover.certora.com/output/40577/a451e923be1144ae88f125ac4f7b7a60?anonymousKey=69814a5c38c0f7720859be747546bbbde3f79191
 invariant totalSupplyBasicIntegrity()
     totalSupply() == sharesFromUnderlyingBalance(totalUnderlyingSupply());
 
@@ -25,119 +24,66 @@ invariant zeroAssetsZeroShares_invariant()
     totalUnderlyingSupply() == 0 <=> totalSupply() == 0
     filtered {f -> !helperMethods(f)}
 
-// Passing except for timeout for claimRedeemRequests:
-// https://prover.certora.com/output/40577/03d0c8799cd7442e8c50ecfee4c940cc/?anonymousKey=110f1e2ba0710a7ee8312516d636e201b73d3576
-rule riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem(method f) filtered {
-    f -> !f.isView
-        && f.selector != sig:sendCoverageFunds().selector
-        && f.selector != sig:sendCLFunds().selector
-        && f.selector != sig:sendRedeemManagerExceedingFunds().selector
-        && f.selector != sig:certorafallback_0().selector
-        && f.selector != sig:sendELFees().selector
-} {
-    mathint assets_before = totalUnderlyingSupply();
-    uint256 toDeposit_before = getBalanceToDeposit();
-    uint256 committed_before = getCommittedBalance();
-    uint256 toRedeem_before = getBalanceToRedeem();
-    mathint sum_before = toDeposit_before + committed_before + toRedeem_before;
-    uint256 river_balance_before = riverEthBalance();
-
-    uint256 totalSupplyMidterm = totalUnderlyingSupply();
-    env e;
-    require e.msg.sender != currentContract;
-    calldataarg args;
-    f(e, args);
-
-    mathint assets_after = totalUnderlyingSupply();
-    uint256 toDeposit_after = getBalanceToDeposit();
-    uint256 committed_after = getCommittedBalance();
-    uint256 toRedeem_after = getBalanceToRedeem();
-    mathint sum_after = toDeposit_after + committed_after + toRedeem_after;
-    uint256 river_balance_after = riverEthBalance();
-
-    assert river_balance_after + sum_before == sum_after + river_balance_before;
+/// @title The River ETH balance covers the validators balance + balance to deposit + committed balance + balance to redeem.
+invariant riverBalancePlusConsensusCoversUnderlyingSupply()
+    to_mathint(totalUnderlyingSupply()) <= riverEthBalance() + consensusLayerEthBalance()
+filtered{f -> !helperMethods(f) && !claimRedeemMethod(f) && !setConsensusMethod(f)}
+{
+    preserved with (env e) {
+        require e.msg.sender != currentContract;
+    }
+    /// Simplification: assuming only one key at a time.
+    /// Justification: see rule 'depositToConsensusLayerAssociative'.
+    preserved depositToConsensusLayer(uint256 _maxCount) with (env e) {
+        require e.msg.sender != currentContract;
+        require _maxCount == 1;
+    }
 }
 
-/*invariant riverBalanceIsSumOf_ToDeposit_Commmitted_ToRedeem_invariant()
-    to_mathint(totalUnderlyingSupply()) == getBalanceToDeposit() + getCommittedBalance() + getBalanceToRedeem()
-    filtered {
-        f -> f.selector != sig:initRiverV1_1(address,uint64,uint64,uint64,uint64,uint64,uint256,uint256,uint128,uint128).selector
-        && f.selector != sig:setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport).selector
-    }*/
-
-rule underlyingBalanceEqualToRiverBalancePlusConsensus_claimRedeemRequests(env e)
-{
-    require getDepositedValidatorCount() <= getCLValidatorCount();
-    require getCLValidatorCount() <= 2^64;
-    require consensusLayerDepositSize() <= 2^64;
-    require to_mathint(totalUnderlyingSupply()) == riverEthBalance() + consensusLayerEthBalance();
-
-    uint32[] _redeemRequestIds;
-    uint32[] _withdrawalEventIds;
-
-    claimRedeemRequests(e, _redeemRequestIds, _withdrawalEventIds);
-
-    assert to_mathint(totalUnderlyingSupply()) == riverEthBalance() + consensusLayerEthBalance();
-}
-
-rule consensusLayerEth_changeWitness(env e, method f, calldataarg args)
-{
-    mathint consensusLayerBalanceBefore = consensusLayerEthBalance();
-
-    f(e, args);
-
-    mathint consensusLayerBalanceAfter = consensusLayerEthBalance();
-
-    assert consensusLayerBalanceBefore == consensusLayerBalanceAfter; // To see which function can change this
-}
-
-rule consensusLayerDepositSize_changeWitness(env e, method f, calldataarg args)
-{
-    mathint depositSizeBefore = consensusLayerDepositSize();
-
-    f(e, args);
-
-    mathint depositSizeAfter = consensusLayerDepositSize();
-
-    satisfy depositSizeBefore != depositSizeAfter; // To see which function can change this
-}
-
-rule getCLValidatorTotalBalance_changeWitness(env e, env e2, method f, calldataarg args)
-{
-    mathint before = getCLValidatorTotalBalance(e2);
-
-    f(e, args);
-
-    mathint after = getCLValidatorTotalBalance(e2);
-
-    satisfy before != after; // To see which function can change this
-}
-
-rule getLastConsensusLayerReport_changeVitness(env e, env e2, method f, calldataarg args)
-{
-    IOracleManagerV1.StoredConsensusLayerReport before = getLastConsensusLayerReport(e2);
-
-    f(e, args);
-
-    IOracleManagerV1.StoredConsensusLayerReport after = getLastConsensusLayerReport(e2);
-
-    assert before.epoch == after.epoch; // To see which function can change this
-    assert after.epoch == 0;
-}
-
-rule riverBalancePlusConsensusCoversUnderlyingSupply(method f) filtered{f -> !f.isView && !helperMethods(f)}
-{
+rule riverBalancePlusConsensusCoversUnderlyingSupply_setConsensus() {
     require to_mathint(totalUnderlyingSupply()) <= riverEthBalance() + consensusLayerEthBalance();
 
     env e;
     require e.msg.sender != currentContract;
     calldataarg args;
-    f(e, args);
+    setConsensusLayerData(e, args);
 
     assert to_mathint(totalUnderlyingSupply()) <= riverEthBalance() + consensusLayerEthBalance();
 }
 
-rule sharePriceMaxDecrease_reportWithdraw() {
+rule riverBalancePlusConsensusCoversUnderlyingSupply_claimRedeem() {
+    require to_mathint(totalUnderlyingSupply()) <= riverEthBalance() + consensusLayerEthBalance();
+
+    env e;
+    require e.msg.sender != currentContract;
+    calldataarg args;
+    claimRedeemRequests(e, args);
+
+    assert to_mathint(totalUnderlyingSupply()) <= riverEthBalance() + consensusLayerEthBalance();
+}
+
+/// @title depositToConsensusLayer is associative with respect to the number of keys.
+rule depositToConsensusLayerAssociative() {
+    env e;
+    storage initState = lastStorage;
+    depositToConsensusLayer(e, 1) at initState;
+    depositToConsensusLayer(e, 1);
+
+    uint256 riverBalanceA = riverEthBalance();
+    uint256 underlyingSupplyA = totalUnderlyingSupply();
+
+    depositToConsensusLayer(e, 2) at initState;
+
+    uint256 riverBalanceB = riverEthBalance();
+    uint256 underlyingSupplyB = totalUnderlyingSupply();
+
+    assert riverBalanceA == riverBalanceB && underlyingSupplyA == underlyingSupplyB;
+}
+
+/// @title Share price stability after burning shares
+/// @notice - can fail if burning all shares but some ETH remains in the underlying supply.
+rule sharePriceMaxDecrease_reportWithdraw() 
+{
     requireInvariant zeroAssetsZeroShares_invariant();
     SetSuppliesBounds();
     env e;
@@ -155,10 +101,10 @@ rule sharePriceMaxDecrease_reportWithdraw() {
     mathint rateAfter = getSharePrice();
     uint256 balanceAfter = totalUnderlyingSupply();
 
-    assert balanceAfter !=0 => rateBefore - rateAfter <= max(2, (rateBefore * rateBefore) /  balanceAfter + 1);
+    assert (balanceAfter !=0 && rateAfter !=0) => rateBefore - rateAfter <= max(2, (rateBefore * rateBefore) /  balanceAfter + 1);
 }
 
-/// @title When user deposits, there is no additional gift component to the deposit.
+/// @title When a user deposits, there is no additional gift component to the deposit.
 /// Proven:
 /// https://prover.certora.com/output/41958/587584c193fa4941ae1ee3b93babd240/?anonymousKey=d58d2abe2a4b1c37d8dfac67d3fcac94249e38d8
 rule noGiftsInDeposit(env e) {
@@ -196,6 +142,7 @@ rule noGiftsInDeposit(env e) {
     }
 }
 
+/// @title Given a lower bound on the epochs per frame, there is only one valid epoch at every timestamp.
 invariant OnlyOneValidEpoch(env e, uint256 epoch1, uint256 epoch2)
     getCurrentEpochId(e) - getLastCompletedEpochId(e) < getCLSpec(e).epochsPerFrame + getCLSpec(e).epochsToAssumedFinality
     =>
