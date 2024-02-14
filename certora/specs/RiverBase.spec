@@ -101,11 +101,11 @@ definition setConsensusMethod(method f) returns bool =
 
 /// Method selector for claimRedeemRequests()
 definition claimRedeemMethod(method f) returns bool = 
-    f.selector != sig:claimRedeemRequests(uint32[],uint32[]).selector;
+    f.selector == sig:claimRedeemRequests(uint32[],uint32[]).selector;
 
 /// Method selector for initRiverV1_1()
 definition initRiverV1Method(method f) returns bool = 
-    sig:initRiverV1_1(address,uint64,uint64,uint64,uint64,uint64,uint256,uint256,uint128,uint128).selector;
+    f.selector == sig:initRiverV1_1(address,uint64,uint64,uint64,uint64,uint64,uint256,uint256,uint128,uint128).selector;
 
 /// Configurable bounds for the ETH supply and shares supply
 definition MINIMUM_ETH_SUPPLY() returns uint256 = 10^16;    /// = 0.01ETH

@@ -33,7 +33,8 @@ filtered{f -> !helperMethods(f) && !claimRedeemMethod(f) && !setConsensusMethod(
         require e.msg.sender != currentContract;
     }
     /// Simplification: assuming only one key at a time.
-    /// Justification: see rule 'depositToConsensusLayerAssociative'.
+    /// Proven for any maxCount (<= 3):
+    /// https://prover.certora.com/output/41958/b2cd145cbe5b4ea68f0a60ea6c3deb4b/?anonymousKey=24351898af9ae329019cc5d9c2c0557f0bc667b1
     preserved depositToConsensusLayer(uint256 _maxCount) with (env e) {
         require e.msg.sender != currentContract;
         require _maxCount == 1;
@@ -63,7 +64,7 @@ rule riverBalancePlusConsensusCoversUnderlyingSupply_claimRedeem() {
 }
 
 /// @title depositToConsensusLayer is associative with respect to the number of keys.
-rule depositToConsensusLayerAssociative() {
+/*rule depositToConsensusLayerAssociative() {
     env e;
     storage initState = lastStorage;
     depositToConsensusLayer(e, 1) at initState;
@@ -78,7 +79,7 @@ rule depositToConsensusLayerAssociative() {
     uint256 underlyingSupplyB = totalUnderlyingSupply();
 
     assert riverBalanceA == riverBalanceB && underlyingSupplyA == underlyingSupplyB;
-}
+}*/
 
 /// @title Share price stability after burning shares
 /// @notice - can fail if burning all shares but some ETH remains in the underlying supply.
@@ -101,7 +102,7 @@ rule sharePriceMaxDecrease_reportWithdraw()
     mathint rateAfter = getSharePrice();
     uint256 balanceAfter = totalUnderlyingSupply();
 
-    assert (balanceAfter !=0 && rateAfter !=0) => rateBefore - rateAfter <= max(2, (rateBefore * rateBefore) /  balanceAfter + 1);
+    assert (balanceAfter !=0 && rateAfter !=0) => rateBefore - rateAfter <= min(rateBefore, max(2, (rateBefore * rateBefore) /  balanceAfter + 1));
 }
 
 /// @title When a user deposits, there is no additional gift component to the deposit.

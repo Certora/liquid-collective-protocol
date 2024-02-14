@@ -22,7 +22,7 @@ contract OperatorsRegistryMock is IRegistry {
 
     function pickNextValidatorsToDeposit(uint256 _count) external returns (bytes[] memory, bytes[] memory) {
         
-        uint256 totalKeysCount = LibUint256.min(_availableKeysPerIndex[_opIndex] ,_count);
+        uint256 totalKeysCount = LibUint256.min(_availableKeysPerIndex[_opIndex], _count);
 
         bytes[] memory publicKeys = new bytes[](totalKeysCount);
         bytes[] memory signatures = new bytes[](totalKeysCount);
