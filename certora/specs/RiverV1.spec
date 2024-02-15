@@ -82,7 +82,7 @@ rule riverBalancePlusConsensusCoversUnderlyingSupply_claimRedeem() {
 }*/
 
 /// @title Share price stability after burning shares
-/// @notice - can fail if burning all shares but some ETH remains in the underlying supply.
+/// https://prover.certora.com/output/41958/83ea904b2158459c86d75155af53e19f/?anonymousKey=9b7dcd4c1d54ef51df7ed76a292b6bad9455d2a7
 rule sharePriceMaxDecrease_reportWithdraw() 
 {
     requireInvariant zeroAssetsZeroShares_invariant();
@@ -102,7 +102,7 @@ rule sharePriceMaxDecrease_reportWithdraw()
     mathint rateAfter = getSharePrice();
     uint256 balanceAfter = totalUnderlyingSupply();
 
-    assert (balanceAfter !=0 && rateAfter !=0) => rateBefore - rateAfter <= min(rateBefore, max(2, (rateBefore * rateBefore) /  balanceAfter + 1));
+    assert balanceAfter !=0 => rateBefore - rateAfter <= min(rateBefore, max(2, (rateBefore * rateBefore) /  balanceAfter + 1));
 }
 
 /// @title When a user deposits, there is no additional gift component to the deposit.
