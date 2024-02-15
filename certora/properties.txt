@@ -29,7 +29,7 @@ LsETH vs. ETH correspondence: totalSupply == sharesFromBalance(totalUnderlyingBa
     - when can change, who can change, when must it change, when should not change
     - valid change: increase only, under some conditions,
 
-converion rate doesn’t vary more than rate_variation_bound
+conversion rate doesn’t vary more than rate_variation_bound
    
 
 
@@ -47,10 +47,14 @@ validator's state transition
 where are the funds, where can they go
     - Users can get funds from the protocol only via the claim() function
 
+correct mechanics
+    - when there's > 32 ETH, new validator should start
+
 6. risk assessment
     - catastrophic behavior, existence of good behavior (satisfy)
 
 conversion rate can increase, can decrease
+
 edge cases
     - what happens to conversion rate when one operator losses as much as the only other gains (rewards==fees+slashes)
 
