@@ -58,9 +58,8 @@ rule onlyAddOperatorIncreasesOperatorsNum(method f) filtered {
     @title The number of operators can only grow by 1
     This rule has a common type error.
 **/
-/*
 rule numOperatorsOnlyIncreasesByOne(method f) filtered {
-    f -> isIgnoredMethod(f) || f.isView
+    f -> !(isIgnoredMethod_Parametric(f) || f.isView)
 } {
     uint256 numOperatorsBefore = getOperatorsCount();
 
@@ -71,11 +70,10 @@ rule numOperatorsOnlyIncreasesByOne(method f) filtered {
     uint256 numOperatorsAfter = getOperatorsCount();
 
     assert (
-        numOperatorsAfter <= numOperatorsBefore + 1,
+        to_mathint(numOperatorsAfter) <=  numOperatorsBefore + 1,
         "Only one operator can be added"
     );
 }
-*/
 
 // -- Invariants ---------------------------------------------------------------
 
@@ -179,7 +177,10 @@ invariant operatorIsInValidState(uint256 opIndex)
 
 
 /**
-    @title Fundable-> Exited validator state change rule
+    @title Funded -> Exited validator state change rule
+    Note - it is wrong in general to use the index to identify the validator, since it
+    can be changed by remove validators. Using the key is preferred, but hard. It can be
+    used for testing methods other than `removeValidators`.
 **/
 rule fundedToExitedValidatorStateChange(uint256 opIndex, uint256 valIndex, method f) {
     // Require that we be in a valid state
