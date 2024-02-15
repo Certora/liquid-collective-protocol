@@ -125,3 +125,24 @@ rule justAStart() {
     removeValidators(e,args);
     satisfy true; 
 }
+
+rule removeValidatorsDecreaseKeysCount(env e)
+{
+    uint256[] indices;
+    uint opIndex;
+    uint keysBefore = getOperator(opIndex).keys;
+    removeValidators(e, opIndex, indices);
+    uint keysAfter = getOperator(opIndex).keys;
+    assert keysBefore > keysAfter;
+}
+
+rule removeValidatorsDecreaseKeysAccordingly(env e)
+{
+    uint256[] indices;
+    uint opIndex;
+    uint keysBefore = getOperator(opIndex).keys;
+    require keysBefore < 4;
+    removeValidators(e, opIndex, indices);
+    uint keysAfter = getOperator(opIndex).keys;
+    assert to_mathint(keysAfter + indices.length) == to_mathint(keysBefore);
+}
