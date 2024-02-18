@@ -12,6 +12,7 @@ use rule mulDivBurnSharePriceDelta_shares;
 
 methods {
     function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivLIA(a, b, c);
+    function getAvailableValidatorsToDeposit() external returns (int256) envfree;
 }
 
 /// @title Checks basic formula: totalSupply of shares must match number of underlying tokens.
@@ -23,11 +24,30 @@ invariant totalSupplyBasicIntegrity()
 invariant zeroAssetsZeroShares_invariant()
     totalUnderlyingSupply() == 0 <=> totalSupply() == 0
     filtered {f -> !helperMethods(f)}
+    {
+        preserved {
+            requireInvariant ValidatorsCannotExceedDeposited();
+        }
+    }
+
+invariant ValidatorsCannotExceedDeposited()
+    getAvailableValidatorsToDeposit() >= 0
+    filtered{f -> !setConsensusMethod(f)}
+
+rule ValidatorsCannotExceedDeposited_report() {
+    env e;
+    require getAvailableValidatorsToDeposit() >= 0;
+    IOracleManagerV1.ConsensusLayerReport report;
+    helper1_fillUpVarsAndPullCL(e, report);
+    helper2_updateLastReport(e, report);
+    assert getAvailableValidatorsToDeposit() >= 0;
+}
 
 /// @title The River ETH balance covers the validators balance + balance to deposit + committed balance + balance to redeem.
 invariant riverBalancePlusConsensusCoversUnderlyingSupply()
     to_mathint(totalUnderlyingSupply()) <= riverEthBalance() + consensusLayerEthBalance()
 filtered{f -> !helperMethods(f) && !claimRedeemMethod(f) && !setConsensusMethod(f)}
+//filtered{f -> helperMethods(f)}
 {
     preserved with (env e) {
         require e.msg.sender != currentContract;

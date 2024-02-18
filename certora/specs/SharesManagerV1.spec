@@ -124,10 +124,7 @@ rule pricePerShareChangesRespectively(method f) filtered {
     assert shares_balance_before == shares_balance_after => underlying_balance_before == underlying_balance_after;
 }
 
-// For claimRedeemRequests:
-// https://prover.certora.com/output/40577/f471c52cd3bc492b8fa66be4ea5ceca2?anonymousKey=41e7eff719e12adb7ef871a595db299bf2b54d81
-// For the rest (except setConsensusLayerData):
-// https://prover.certora.com/output/40577/e1b3895a5aea45109a2398708c64c5c9/?anonymousKey=ea0663a174435d274e51a992cee73f0573fa8a80
+/// https://prover.certora.com/output/41958/db973e7a5aee46acad91250a1fd93866/?anonymousKey=476d1ea167654f5cd7a7bdfd351e7660d8c6321c
 rule sharesMonotonicWithAssets(method f) filtered {f -> !f.isView && !setConsensusMethod(f)} {
     SetSuppliesBounds();
 
