@@ -5,6 +5,14 @@ import "contracts/src/River.1.sol";
 
 contract RiverV1Harness is RiverV1 {
 
+    function getAvailableValidatorsToDeposit() external view returns (int256) {
+        uint256 clValidatorCount = LastConsensusLayerReport.get().validatorsCount;
+        uint256 depositedValidatorCount = DepositedValidatorCount.get();
+        assert (depositedValidatorCount <= type(uint128).max);
+        assert (clValidatorCount <= type(uint128).max);
+        return int256(depositedValidatorCount) - int256(clValidatorCount);
+    }
+
     function riverEthBalance() external view returns (uint256) {
         return address(this).balance;
     }
@@ -18,14 +26,9 @@ contract RiverV1Harness is RiverV1 {
         uint256 clValidatorCount = storedReport.validatorsCount;
         uint256 depositedValidatorCount = DepositedValidatorCount.get();
 
+        if (depositedValidatorCount <= clValidatorCount) return 0;
         uint256 depositSize = ConsensusLayerDepositManagerV1.DEPOSIT_SIZE;
-        if (depositedValidatorCount == clValidatorCount)
-            return 0;
-        return (clValidatorCount - depositedValidatorCount) * depositSize;
-    }
-
-    function reportWithdrawToRedeemManager() external {
-        _reportWithdrawToRedeemManager();
+        return (depositedValidatorCount - clValidatorCount) * depositSize;
     }
 
     /// @inheritdoc IOracleManagerV1
