@@ -9,8 +9,6 @@ methods {
 }
 
 /// @title isAllowed() only changes when setAllowPermissions or setDenyPermissions are called
-// Proved
-// https://prover.certora.com/output/40577/c1ae7a4bdaac4833bf414adb75aa7b6d/?anonymousKey=6bfd0a5e18d36bb4bf256732fb26a0ef01ed73ed
 rule isAllowedChangeRestrictively(env e, method f)
 {
     address account;
@@ -29,8 +27,6 @@ rule isAllowedChangeRestrictively(env e, method f)
 
 
 /// @title isDenied() only changes when setAllowPermissions or setDenyPermissions is called
-// Proved
-// https://prover.certora.com/output/40577/c1ae7a4bdaac4833bf414adb75aa7b6d/?anonymousKey=6bfd0a5e18d36bb4bf256732fb26a0ef01ed73ed
 rule isDeniedChangeRestrictively(env e, method f)
 {
     address account;
