@@ -23,3 +23,7 @@ deployments/tenderly
 .DS_Store
 .idea
 lcov.info
+
+# certora
+.certora_internal
+emv*/**
