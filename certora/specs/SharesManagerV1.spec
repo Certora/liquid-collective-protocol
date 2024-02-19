@@ -6,7 +6,7 @@ methods {
     function balanceOf(address) external returns(uint256) envfree;
     function balanceOfUnderlying(address) external returns(uint256) envfree;
     function totalSupply() external returns(uint256) envfree;
-    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivLIA(a, b, c);
+    function math.mulDiv(uint256 a, uint256 b, uint256 c) internal returns (uint256) => mulDivDownAbstractPlus(a, b, c);
 }
 
 /// @title The allowance can only be changed by functions listed in the filter.

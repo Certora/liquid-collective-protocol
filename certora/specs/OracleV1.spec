@@ -20,9 +20,8 @@ methods {
     function _.setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport report) external with (env e) => setEpochCVL(report.epoch, e) expect void;
     function _.isValidEpoch(uint256 epoch) external with (env e) => isValidEpochCVL(epoch, e.block.timestamp) expect bool;
 }
-
-/// Link:
-/// https://prover.certora.com/output/41958/41eb4e27823049f4ba1e37c1c50468d2/?anonymousKey=976deb7f7709c7b70546591e145039b7b65604cd
+/// Verification report:
+/// https://prover.certora.com/output/41958/53fadabba0a34488818c961a7dc424d5/?anonymousKey=ff982a2fecbcb60d0b3744d38ee39721169fdcf4
 
 /*
 ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -242,6 +241,17 @@ invariant LastReportedEpochIsValid()
     {
         preserved with (env e) {require e.block.timestamp !=0;}
     }
+
+/// @title Any report variant has non-zero votes.
+invariant VariantHasVotes(uint256 id) 
+    id < getReportVariantsCount() => getReportVariantDetails(id).votes > 0
+    {
+        preserved {
+            requireInvariant ZeroAddressIsNotAMember();
+            uint256 lastIndex = getReportVariantsCount() > 0 ? assert_uint256(getReportVariantsCount() - 1) : 0;
+            requireInvariant VariantHasVotes(lastIndex);
+        }
+    }
     
 /// @title The setMember() function:
     /// (a) Cannot assign the same member again.
@@ -378,6 +388,26 @@ rule votesChangeIntegrity(method f, uint256 id) filtered{f -> !f.isView && !clea
     assert votes_before == votes_after || votes_after - votes_before == 1, "votes can either increase by 1 or be nullified";
 }
 
+rule votesChangeIntegrity_report(uint256 id) {
+    env e;
+    bool isMember_ = isMember(e.msg.sender);
+    require getReportVariantsCount() < (1 << 254);
+    ReportsVariants.ReportVariantDetails details_before = getReportVariantDetails(id);
+    uint256 votes_before = details_before.votes;
+        calldataarg args;
+        requireInvariant VariantHasVotes(0);
+        requireInvariant VariantHasVotes(1);
+        requireInvariant VariantHasVotes(2);
+        requireInvariant VariantHasVotes(3);
+        requireInvariant VariantHasVotes(4);
+        reportConsensusLayerData(e, args);
+    ReportsVariants.ReportVariantDetails details_after = getReportVariantDetails(id);
+    uint256 votes_after = details_after.votes;
+
+    assert !isMember_ => votes_before == votes_after, "A non oracle member cannot change the number of votes";
+    assert votes_before == votes_after || votes_after - votes_before == 1, "votes can either increase by 1 or be nullified";
+}
+
 /*
 ┌─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Rules : Reports                                                                                           │
@@ -484,4 +514,15 @@ rule reportSubmissionIntegrity2() {
     uint256 lastConsensus_after = lastConsensusEpoch;
 
     assert getMemberReportStatus(e.msg.sender) || lastConsensus_before != lastConsensus_after;
+}
+
+/// @title If a report has been submitted, then all votes must be nullified (no report variants).
+rule submitReportNullifiesVotes() {
+    require getReportVariantsCount() != 0;
+    uint256 lastConsensus_before = lastConsensusEpoch;
+        env e;
+        calldataarg args;
+        reportConsensusLayerData(e, args);
+    uint256 lastConsensus_after = lastConsensusEpoch;
+    assert lastConsensus_before != lastConsensus_after => getReportVariantsCount() == 0;
 }
