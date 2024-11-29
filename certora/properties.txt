@@ -1,0 +1,60 @@
+Thinking of properties on River
+
+// types of properties
+1. unit test
+    - props. of single function, based on it arguments, revert cases, ...
+        - monotonicity: x <= y -> f(x) <= f(y)
+        - additivity: f(x) (+) f(y) ~ f(x+y)
+        - injectivity: x != y -> f(x) != f(y)
+        - surjectivity: forall y exists x, s.t. f(x) = y
+        - non-diminishing: f(x) >= x
+        
+balanceFromShares is monotone: x <= y -> balanceFromShares(x) <= balanceFromShares(y)
+
+
+
+
+2. valid states
+    - invariants that should always hold in the system, bounds on variables, related variables, ...
+        - x <= bound
+        - x >= y, x == f(y)
+        - x increases <-> y increases
+
+LsETH vs. ETH correspondence: totalSupply == sharesFromBalance(totalUnderlyingBalance())
+
+
+
+
+3. variable transition
+    - when can change, who can change, when must it change, when should not change
+    - valid change: increase only, under some conditions,
+
+conversion rate doesn’t vary more than rate_variation_bound
+   
+
+
+
+4. state transition
+    - valid states, transitions, under which condition, ..
+
+validator's state transition
+    - also with conditions: (validator switched fundable to not fundable) -> limit decreased
+
+
+5. high level properties
+    - overall behavior, interaction with other contracts, ...
+
+where are the funds, where can they go
+    - Users can get funds from the protocol only via the claim() function
+
+correct mechanics
+    - when there's > 32 ETH, new validator should start
+
+6. risk assessment
+    - catastrophic behavior, existence of good behavior (satisfy)
+
+conversion rate can increase, can decrease
+
+edge cases
+    - what happens to conversion rate when one operator losses as much as the only other gains (rewards==fees+slashes)
+
