@@ -48,3 +48,7 @@ runRiver.sh
 .claude
 
 /.review
+
+# Certora directories
+**/.certora_internal
+**/.CertoraProverLiteReports
