@@ -15,6 +15,7 @@ methods {
     function _.getSlashingContainmentMode() external => DISPATCHER(true);
     function _.incrementFundedETH(uint256[],bytes[][]) external => DISPATCHER(true);
     function _.isDenied(address) external => DISPATCHER(true);
+    function _.isValidEpoch(uint256) external => DISPATCHER(true);
     function _.onlyAllowed(address,uint256) external => DISPATCHER(true);
     function _.pullCoverageFunds(uint256) external => DISPATCHER(true);
     function _.pullELFees(uint256) external => DISPATCHER(true);
@@ -29,6 +30,7 @@ methods {
     function _.sendCoverageFunds() external => DISPATCHER(true);
     function _.sendELFees() external => DISPATCHER(true);
     function _.sendRedeemManagerExceedingFunds() external => DISPATCHER(true);
+    function _.setConsensusLayerData(IOracleManagerV1.ConsensusLayerReport) external => DISPATCHER(true);
     function _.sharesFromUnderlyingBalance(uint256) external => DISPATCHER(true);
     function _.transfer(address,uint256) external => DISPATCHER(true);
     function _.transferFrom(address,address,uint256) external => DISPATCHER(true);
