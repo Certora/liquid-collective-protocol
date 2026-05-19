@@ -42,6 +42,18 @@ methods {
         bytes32 withdrawalCredentials
     ) internal returns (IDepositDataBuffer.DepositObject[] memory) =>
         validateSummary(depositDataBufferId, depositRootHash);
+
+    // LibBytes.slice contains a memory-safe inline-assembly chunk-copy loop. It is
+    // only reached from _depositValidator's SSZ hashing chain, where the result is
+    // immediately fed into sha256() — i.e. its content is opaque to the Prover
+    // anyway. Replace with a CVL summary that returns a havoc'd bytes whose length
+    // matches the caller's requested length, so downstream length arithmetic (e.g.
+    // bytes.concat(slice(sig,0,64), bytes32(0))) stays consistent.
+    function LibBytes.slice(
+        bytes memory _bytes,
+        uint256 _start,
+        uint256 _length
+    ) internal returns (bytes memory) => sliceSummary(_length);
 }
 
 // CVL summary for _verifyBLSSignatures: nondeterministic accept/prune.
@@ -87,5 +99,15 @@ function validateSummary(bytes32 depositDataBufferId, bytes32 depositRootHash)
     // validate() reverts via NoDeposits() when deposits.length == 0; preserve the
     // non-revert path for satisfy-true sanity rules.
     require result.length > 0;
+    return result;
+}
+
+// CVL summary for LibBytes.slice: havoc'd bytes whose length matches the requested
+// slice length. The original is pure (read-only) and its content is immediately
+// consumed by sha256(), so dropping the actual byte values is sound for any rule
+// that doesn't reason about the resulting depositDataRoot.
+function sliceSummary(uint256 _length) returns bytes {
+    bytes result;
+    require result.length == _length;
     return result;
 }

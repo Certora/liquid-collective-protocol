@@ -1,5 +1,6 @@
 methods {
     function _.get_deposit_root() external => DISPATCHER(true);
+    function _.deposit(bytes,bytes,bytes,bytes32) external => DISPATCHER(true);
     // getDepositData is summarized in specs/summaries/RiverV1_base_summaries.spec
     // (CVL function `getDepositDataSummary`) — see comment there for why we don't
     // dispatch into DepositDataBufferMock for this entry point.
