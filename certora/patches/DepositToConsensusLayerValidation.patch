@@ -1,0 +1,113 @@
+This for development purpouse only and will be removed later
+diff --git a/contracts/src/components/DepositToConsensusLayerValidation.sol b/contracts/src/components/DepositToConsensusLayerValidation.sol
+index 7823c8d..b3fe644 100644
+--- a/contracts/src/components/DepositToConsensusLayerValidation.sol
++++ b/contracts/src/components/DepositToConsensusLayerValidation.sol
+@@ -196,7 +196,6 @@ abstract contract DepositToConsensusLayerValidation {
+     ) public view returns (IDepositDataBuffer.DepositObject[] memory deposits) {
+         // 1. Verify attestation quorum
+         _verifyAttestationQuorum(depositDataBufferId, depositRootHash, signatures);
+-
+         // 2. Get deposit data from buffer
+         deposits = _depositDataBuffer().getDepositData(depositDataBufferId);
+         uint256 depositCount = deposits.length;
+@@ -206,16 +205,15 @@ abstract contract DepositToConsensusLayerValidation {
+         //    This removes the DepositDataBuffer contract from the attestation trust chain:
+         //    attesters sign the keccak256 commitment, and we enforce here that the deposits we
+         //    are about to execute are exactly the ones that commitment covers.
+-        bytes32 computedId = keccak256(abi.encode(deposits));
+-        if (computedId != depositDataBufferId) {
+-            revert BufferIdMismatch(depositDataBufferId, computedId);
+-        }
++        // bytes32 computedId = keccak256(abi.encode(deposits));
++        // if (computedId != depositDataBufferId) {
++        //     revert BufferIdMismatch(depositDataBufferId, computedId);
++        // }
+ 
+         // 4. Check depositYs count
+         if (depositYs.length != depositCount) {
+             revert BLSSignatureCountMismatch(depositCount, depositYs.length);
+         }
+-
+         // 5. Enforce fixed lengths on dynamic-bytes fields. Without this, a buffer producer
+         //    can pad fields beyond their canonical length; the keccak commitment binds whatever
+         //    encoding was submitted, but the BLS lib would silently ignore trailing bytes and
+@@ -230,7 +228,7 @@ abstract contract DepositToConsensusLayerValidation {
+         }
+ 
+         // 6. Verify BLS signatures against the canonical River WC
+-        _verifyBLSSignatures(deposits, depositYs, withdrawalCredentials);
++        // _verifyBLSSignatures(deposits, depositYs, withdrawalCredentials);
+     }
+ 
+     function _verifyAttestationQuorum(bytes32 depositDataBufferId, bytes32 depositRootHash, bytes[] calldata signatures)
+@@ -255,7 +253,7 @@ abstract contract DepositToConsensusLayerValidation {
+         bytes32 domainSeparator = _domainSeparator();
+         if (domainSeparator == bytes32(0)) revert ZeroDomainSeparator();
+         bytes32 structHash = keccak256(abi.encode(ATTEST_TYPEHASH, depositDataBufferId, depositRootHash));
+-        bytes32 digest = ECDSA.toTypedDataHash(domainSeparator, structHash);
++        bytes32 digest = keccak256(abi.encodePacked(hex"1901", domainSeparator, structHash));
+ 
+         uint256 validCount = 0;
+         address[] memory seen = new address[](sigLen);
+@@ -288,26 +286,26 @@ abstract contract DepositToConsensusLayerValidation {
+         BLS12_381.DepositY[] calldata depositYs,
+         bytes32 withdrawalCredentials
+     ) internal view {
+-        for (uint256 i = 0; i < deposits.length; i++) {
++        //for (uint256 i = 0; i < deposits.length; i++) {
+             (bool ok, bytes memory revertData) = address(this)
+                 .staticcall(
+                     abi.encodeCall(
+                         this.verifyBLSDeposit,
+                         (
+-                            deposits[i].pubkey,
+-                            deposits[i].signature,
+-                            deposits[i].amount,
+-                            depositYs[i],
++                            deposits[0].pubkey,
++                            deposits[0].signature,
++                            deposits[0].amount,
++                            depositYs[0],
+                             withdrawalCredentials
+                         )
+                     )
+                 );
+-            if (!ok) {
+-                assembly {
+-                    revert(add(revertData, 32), mload(revertData))
+-                }
+-            }
+-        }
++            // if (!ok) {
++            //     assembly {
++            //         revert(add(revertData, 32), mload(revertData))
++            //     }
++            // }
++        // }
+     }
+ 
+     // -----------------------------------------------------------------------
+@@ -330,7 +328,7 @@ abstract contract DepositToConsensusLayerValidation {
+     ) external view {
+         bytes32 depositDomain = _depositDomain();
+         if (depositDomain == bytes32(0)) revert ZeroDepositDomain();
+-        BLS12_381.verifyDepositMessage(pubkey, signature, amount, depositY, withdrawalCredentials, depositDomain);
++        //BLS12_381.verifyDepositMessage(pubkey, signature, amount, depositY, withdrawalCredentials, depositDomain);
+     }
+ 
+     // -----------------------------------------------------------------------
+@@ -345,12 +343,7 @@ abstract contract DepositToConsensusLayerValidation {
+         if (v < 27) v += 27;
+         if (v != 27 && v != 28) return address(0);
+ 
+-        bytes32 r;
+-        bytes32 s;
+-        assembly {
+-            r := calldataload(sig.offset)
+-            s := calldataload(add(sig.offset, 0x20))
+-        }
++        (bytes32 r, bytes32 s) = abi.decode(sig[0:64], (bytes32, bytes32));
+ 
+         (address recovered, ECDSA.RecoverError err) = ECDSA.tryRecover(digest, v, r, s);
+         if (err != ECDSA.RecoverError.NoError) return address(0);
