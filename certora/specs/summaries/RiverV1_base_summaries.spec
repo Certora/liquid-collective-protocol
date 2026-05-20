@@ -62,7 +62,9 @@ methods {
 // expensive BLS pairing math and the per-deposit loop out of the call graph.
 function verifyBLSSignaturesSummary() {
     bool ok;
-    require ok;
+    if (!ok) {
+        revert("Simulates verifyBLSSignature failure");
+    }
 }
 
 // CVL summary for getDepositData. Returns a havoc'd, length-bounded
